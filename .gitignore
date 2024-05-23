@@ -1,0 +1,33 @@
+# Byte-compiled / optimized Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# IDE/Editor specific files
+.vscode/
+.idea/
+*.egg-info/
+*.egg/
+*.eggs/
+dist/
+build/
+
+
+# Dependencies
+.venv/
+env/
+
+# Ignore any local configuration files
+*.env
+*.cfg
+*.ini
+
+# Ignore any log files
+*.log
+
+# Ignore any cache directories
+.caches/
+.cache/

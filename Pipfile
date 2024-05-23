@@ -1,0 +1,17 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+psutil = "==5.9.8"
+
+[dev-packages]
+setuptools = "==69.5.*"
+wheel = "==0.43.*"
+twine = "==5.0.*"
+build = "==1.2.*"
+measurit = {file = ".", editable = true}
+
+[requires]
+python_version = "3.12"
