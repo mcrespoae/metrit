@@ -1,14 +1,14 @@
 
 # measuit
 
-![PyPI](https://img.shields.io/pypi/v/tempit?label=pypi%20package)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/tempit)
+![PyPI](https://img.shields.io/pypi/v/measureit?label=pypi%20package)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/measureit)
 
 ## TODO
 
 ## License
 
-This project is licensed under the [MIT License](https://github.com/mcrespoae/tempit/blob/main/LICENSE).
+This project is licensed under the [MIT License](https://github.com/mcrespoae/measureit/blob/main/LICENSE).
 
 ## Contributors
 
