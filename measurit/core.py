@@ -43,7 +43,17 @@ def measureit(*args: Any, verbose: bool = False) -> Callable:
 
             # Get the memory footprint before the function is called
             pid: int = current_process().pid  # type: ignore
-            memory_rss_to_substract, memory_vms_to_substract, io_data_to_substract = get_values_to_substract(pid)
+            try:
+                memory_rss_to_substract, memory_vms_to_substract, io_data_to_substract = get_values_to_substract(pid)
+            except Exception:
+                memory_rss_to_substract = 0
+                memory_vms_to_substract = 0
+                io_data_to_substract = {
+                    "read_count": 0,
+                    "write_count": 0,
+                    "read_bytes": 0,
+                    "write_bytes": 0,
+                }
 
             result, cpu_usage_list, memory_rss_list, memory_vms_list, io_data = call_func_and_measure_data(
                 pid, callable_func, *args, **kwargs
