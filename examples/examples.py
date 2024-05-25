@@ -91,9 +91,9 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     os.remove(file)
 
 
-@measureit(verbose=True)
+# @measureit(verbose=True)
 def main():
-
+    """
     print("---CLASS EXAMPLES---")
     test_class_args = MeasureTestClassWithArgs(3, b=6)
     if test_class_args.sum != 9:
@@ -121,9 +121,9 @@ def main():
     wrapped_recursive_func(21)
     recursive_func(21)
     print("---END RECURSIVE EXAMPLES---\n")
-
+    """
     print("---OTHER EXAMPLES---")
-    fill_ram(100, 5)
+    fill_ram(100, duration_in_seconds=5)
     cpu_intensive(3, b=4)
     simulate_writes_and_reads()
     print("---END OTHER EXAMPLES---\n")
