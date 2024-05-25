@@ -100,6 +100,18 @@ def _decorator(func: Callable, verbose: bool = False, look_for_children: bool = 
 
 
 def handle_recursive_call(func, potential_recursion_func_stack, *args, **kwargs) -> Any:
+    """
+    Handle a recursive call by executing the given function with the provided arguments and keyword arguments.
+
+    Parameters:
+        func (Callable): The function to be executed.
+        potential_recursion_func_stack (deque): A stack of potential recursive functions.
+        *args: Variable length argument list.
+        **kwargs: Arbitrary keyword arguments.
+
+    Returns:
+        Any: The result of executing the function.
+    """
     result: Any = func(*args, **kwargs)
     potential_recursion_func_stack.pop()
     return result
@@ -114,9 +126,8 @@ def call_func_and_measure_data(pid: int | None, func: Callable, *args: Tuple, **
         *args (Tuple): The positional arguments to pass to the function.
         **kwargs (Dict): The keyword arguments to pass to the function.
     Returns:
-        Tuple[Any, List[float], List[int], List[int], Dict[str, int]]: A tuple containing the result of the function,
-        a list of CPU usage percentages, a list of memory RSS values, a list of memory VMS values, and a dictionary
-        containing I/O data.
+        Tuple[Any, Stats]: A tuple containing the result of the function and the Stats object.
+        Stats: Object containing the CPU usage, memory usage, and I/O usage of the function.
     """
 
     # Start the necessary quesues and process
@@ -142,16 +153,10 @@ def get_values_to_substract(pid: int | None, look_for_children: bool) -> Stats:
 
     Args:
         pid (int | None): The process ID to get the initial values for.
+        look_for_children (bool): Whether to look for children processes or not.
 
     Returns:
-        Tuple[int, int, Dict[str, int]]: A tuple containing the initial values to substract:
-            - int: The initial memory RSS value.
-            - int: The initial memory VMS value.
-            - Dict[str, int]: A dictionary containing the initial I/O data:
-                - "read_count": The initial read count.
-                - "write_count": The initial write count.
-                - "read_bytes": The initial read bytes.
-                - "write_bytes": The initial write bytes.
+        Stats: Object containing the initial values to substract them later.
     """
     data_to_substract_queue: Queue = Queue()
     success_queue: Queue = Queue()
@@ -176,13 +181,16 @@ def get_initial_snapshot_data(
     """
     Get the initial snapshot data for a process with the given process ID.
     This data will be used later to substract it from the final read data.
+    If it fails, it will add a default Stats object to the queue.
 
     Args:
         pid (int | None): The process ID to get the initial snapshot data for.
         data_to_substract_queue (Queue): The queue to put the initial snapshot data into.
+        success_queue (Queue): The queue to put whether the initial snapshot data was successfully obtained.
+        look_for_children (bool): Whether to look for children processes or not.
 
     Returns:
-        None: This function does not return anything. It sends the initial snapshot data to the passed queue.
+        None: This function does not return anything. It sends the initial snapshot data to the passed data_to_substract_queue.
     """
     try:
         p: psutil.Process = psutil.Process(pid)
@@ -209,6 +217,20 @@ def get_initial_snapshot_data(
 
 
 def get_process_by_pid(pid: int, refresh_rate: float) -> psutil.Process:
+    """
+    Retrieves a `psutil.Process` object by its process ID (PID).
+
+    Args:
+        pid (int): The process ID of the target process.
+        refresh_rate (float): The time interval (in seconds) between each check for the existence of the process.
+
+    Returns:
+        psutil.Process: The `psutil.Process` object representing the process with the given PID.
+
+    Raises:
+        psutil.NoSuchProcess: If the process with the given PID does not exist within the specified timeout period.
+
+    """
     timeout: float = 10.0
     while True:
         if pid is not None and psutil.pid_exists(pid):
@@ -231,7 +253,7 @@ def monitor_process_pooling(pid: int, queue: Queue, finished_queue: Queue, look_
         look_for_children (bool, optional): Whether to include child processes in the monitoring. Defaults to False.
 
     Returns:
-        None: This function does not return anything. It sends the CPU, memory, and I/O usage data to the passed queue.
+        None: This function does not return anything. It sends the CPU, memory, and I/O usage data to the passed queue in form of a Stats object.
     """
 
     refresh_rate: float = 0.1  # Initial refresh rate
@@ -292,6 +314,20 @@ def monitor_process_pooling(pid: int, queue: Queue, finished_queue: Queue, look_
 def get_total_cpu_memory(
     p: psutil.Process, refresh_rate: float, look_for_children: bool = False
 ) -> Tuple[float, int, int, float]:
+    """
+    Retrieves the total CPU usage, total RSS memory, total VMS memory, and memory percentage of a given process and its children.
+
+    Args:
+        p (psutil.Process): The process object to retrieve the information from.
+        refresh_rate (float): The interval in seconds between each CPU and memory usage measurement.
+        look_for_children (bool, optional): Whether to include the CPU and memory usage of the process's children. Defaults to False.
+
+    Returns:
+        Tuple[float, int, int, float]: A tuple containing the total CPU usage (float), total RSS memory (int), total VMS memory (int), and memory percentage (float).
+
+    Note:
+        - If the process or its children do not exist or access is denied, the function returns (0.0, 0, 0, 0.0).
+    """
     try:
         total_cpu = p.cpu_percent(interval=refresh_rate)
         memory_info = p.as_dict(attrs=["memory_info", "memory_percent"])
@@ -326,6 +362,21 @@ def get_total_cpu_memory(
 
 
 def get_io_counters(process: psutil.Process, look_for_children: bool = False) -> Tuple[int, int, int, int]:
+    """
+    Retrieves the I/O counters of a given process and its children.
+
+    Args:
+        process (psutil.Process): The process object to retrieve the I/O counters from.
+        look_for_children (bool, optional): Whether to include the I/O counters of the process's children. Defaults to False.
+
+    Returns:
+        Tuple[int, int, int, int]: A tuple containing the read count, write count, read bytes, and write bytes.
+
+    Note:
+        - If the process or its children do not exist or access is denied, the function returns (0, 0, 0, 0).
+        - If the platform is macOS, the function returns (0, 0, 0, 0).
+        - If an exception occurs during the retrieval of the I/O counters, the function returns (0, 0, 0, 0).
+    """
     read_count = 0
     write_count = 0
     read_bytes = 0

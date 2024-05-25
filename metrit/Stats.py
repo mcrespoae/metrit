@@ -33,10 +33,28 @@ class Stats:
 
     @staticmethod
     def get_non_negative_difference(value1, value2):
+        """
+        Calculates the non-negative difference between two values.
+
+        Args:
+            value1 (int or float): The first value.
+            value2 (int or float): The second value.
+
+        Returns:
+            float: The non-negative difference between value1 and value2.
+        """
         return max(value1 - value2, 0)
 
     def __sub__(self, other):
-        # Implement substraction of two Stats objects
+        """
+        Subtracts the values of another `Stats` object from the current object and returns a new `Stats` object with the differences.
+
+        Parameters:
+            other (Stats): The `Stats` object to subtract from the current object.
+
+        Returns:
+            Stats: A new `Stats` object with the differences between the current object and the other object.
+        """
         cpu_percentage_avg = self.get_non_negative_difference(self.cpu_percentage_avg, other.cpu_percentage_avg)
         cpu_percentage_max = self.get_non_negative_difference(self.cpu_percentage_max, other.cpu_percentage_max)
         memory_percentage_avg = self.get_non_negative_difference(
@@ -65,7 +83,20 @@ class Stats:
             read_bytes=read_bytes,
         )
 
-    def print(self, verbose, func_name, args, kwargs):
+    def print(self, verbose, func_name, args, kwargs) -> None:
+        """
+        Prints the metrit data for a given function.
+
+        Parameters:
+            verbose (bool): If True, prints detailed information about the metrit data. If False, prints a concise summary.
+            func_name (str): The name of the function.
+            args (tuple): The positional arguments passed to the function.
+            kwargs (dict): The keyword arguments passed to the function.
+
+        Returns:
+            None
+        """
+
         if verbose:
             print("*" * 5, f"metrit data for function {func_name}:", "*" * 5)
             print(f"\tArgs: {args}.")
