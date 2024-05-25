@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 psutil = "==5.9.8"
 
-
 [dev-packages]
 setuptools = "==69.5.*"
 wheel = "==0.43.*"

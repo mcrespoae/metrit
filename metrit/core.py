@@ -1,21 +1,22 @@
 import inspect
 import time
-import warnings
 from collections import deque
 from functools import partial, wraps
 from multiprocessing import Process, Queue, current_process
+from sys import platform
 from typing import Any, Callable, Dict, List, Tuple
 
 import psutil
 
-from metrit.utils import print_usage
+from metrit.Stats import Stats
+from metrit.utils import check_is_recursive_func, extract_callable_and_args_if_method
 
 
-class metritConfig:
+class MetritConfig:
     ACTIVE: bool = True
 
 
-def metrit(*args: Any, verbose: bool = False) -> Callable:
+def metrit(*args: Any, verbose: bool = False, look_for_children: bool = False) -> Callable:
     """
     Decorator function that measures the cpu, ram and io footprint of a given function in the current process. It can be called like @metrit or using arguments @metrit(...)
 
@@ -53,86 +54,58 @@ def metrit(*args: Any, verbose: bool = False) -> Callable:
         # The decorated function can be used as usual
         result = my_function(arg1_value, arg2_value)
     """
-    if not metritConfig.ACTIVE:
-        # Return the callable unmodified if metritConfig.ACTIVE is set to False
+    if not MetritConfig.ACTIVE:
+        # Return the callable unmodified if MetritConfig.ACTIVE is set to False
         if args:
             return args[0]
         else:
             return lambda f: f
-
-    def decorator(func: Callable, verbose: bool = False) -> Callable:
-
-        if inspect.isclass(func):
-            # If a class is found, return the class inmediatly since it could raise an exception if triggered from other processes
-            return func
-        potential_recursion_func_stack: deque[Callable] = deque()
-
-        @wraps(func)
-        def metrit_wrapper(*args: Tuple, **kwargs: Dict) -> Any:
-            nonlocal potential_recursion_func_stack
-            is_recursive: bool = check_is_recursive_func(func, potential_recursion_func_stack)
-            callable_func, args, args_to_print = extract_callable_and_args_if_method(func, *args)
-            if is_recursive:
-                result: Any = callable_func(*args, **kwargs)
-                potential_recursion_func_stack.pop()
-                return result
-
-            # Get the memory footprint before the function is called
-            pid: int = current_process().pid  # type: ignore
-            try:
-                memory_rss_to_substract, memory_vms_to_substract, io_data_to_substract = get_values_to_substract(pid)
-            except Exception:
-                memory_rss_to_substract = 0
-                memory_vms_to_substract = 0
-                io_data_to_substract = {
-                    "read_count": 0,
-                    "write_count": 0,
-                    "read_bytes": 0,
-                    "write_bytes": 0,
-                }
-
-            result, cpu_usage_list, memory_rss_list, memory_vms_list, io_data = call_func_and_measure_data(
-                pid, callable_func, *args, **kwargs
-            )
-
-            cleaned_memory_rss_list, cleaned_memory_vms_list, clenaed_io_data = substract_data(
-                memory_rss_to_substract,
-                memory_rss_list,
-                memory_vms_to_substract,
-                memory_vms_list,
-                io_data_to_substract,
-                io_data,
-            )
-            potential_recursion_func_stack.pop()
-            if not potential_recursion_func_stack:
-                print_usage(
-                    callable_func.__name__,
-                    args_to_print,
-                    kwargs,
-                    cpu_usage_list,
-                    cleaned_memory_rss_list,
-                    cleaned_memory_vms_list,
-                    clenaed_io_data["write_count"],
-                    clenaed_io_data["read_count"],
-                    clenaed_io_data["write_bytes"],
-                    clenaed_io_data["read_bytes"],
-                    verbose,
-                )
-
-            return result
-
-        return metrit_wrapper
-
-    if args:  # If arguments are not provided, return a decorator
-        return decorator(*args)
-
+    if args:  # If arguments are provided, return the decorated function
+        return _decorator(*args)
     else:
-        return partial(decorator, verbose=verbose)
+        return partial(_decorator, verbose=verbose, look_for_children=look_for_children)
 
 
-def call_func_and_measure_data(
-    pid: int | None, func: Callable, *args: Tuple, **kwargs: Dict
-) -> Tuple[Any, List[float], List[int], List[int], Dict[str, int]]:
+def _decorator(func: Callable, verbose: bool = False, look_for_children: bool = False) -> Callable:
+
+    if inspect.isclass(func):
+        # If a class is found, return the class inmediatly since it could raise an exception if triggered from other processes
+        return func
+    potential_recursion_func_stack: deque[Callable] = deque()
+
+    @wraps(func)
+    def metrit_wrapper(*args: Tuple, **kwargs: Dict) -> Any:
+        nonlocal potential_recursion_func_stack
+        is_recursive: bool = check_is_recursive_func(func, potential_recursion_func_stack)
+        callable_func, args, args_to_print = extract_callable_and_args_if_method(func, *args)
+        if is_recursive:
+            return handle_recursive_call(callable_func, potential_recursion_func_stack, *args, **kwargs)
+
+        # Get the memory footprint before the function is called
+        pid: int = current_process().pid  # type: ignore
+        try:
+            stats_to_sub: Stats = get_values_to_substract(pid, look_for_children)
+        except Exception:
+            stats_to_sub = Stats()
+
+        result, measured_stats = call_func_and_measure_data(pid, callable_func, *args, **kwargs)
+        cleaned_stats: Stats = measured_stats - stats_to_sub
+
+        potential_recursion_func_stack.pop()
+        if not potential_recursion_func_stack:
+            cleaned_stats.print(verbose, callable_func.__name__, args_to_print, kwargs)
+        return result
+
+    return metrit_wrapper
+
+
+def handle_recursive_call(func, potential_recursion_func_stack, *args, **kwargs) -> Any:
+    result: Any = func(*args, **kwargs)
+    potential_recursion_func_stack.pop()
+    return result
+
+
+def call_func_and_measure_data(pid: int | None, func: Callable, *args: Tuple, **kwargs: Dict) -> Tuple[Any, Stats]:
     """
     Calls a function and measures its CPU usage, memory usage, and I/O usage.
     Args:
@@ -154,17 +127,16 @@ def call_func_and_measure_data(
     p_monitor.start()
     # TODO: Add support for children if the function can be triggered in other process - Done but not in production
 
-    try:
-        result: Any = func(*args, **kwargs)  # Not isolated way
-    finally:
-        finished_queue.put(True)  # Ensures the monitor process is terminated
-        p_monitor.join()
+    result: Any = func(*args, **kwargs)
 
-    cpu_usage_list, memory_rss_list, memory_vms_list, io_data = monitor_queue.get()
-    return result, cpu_usage_list, memory_rss_list, memory_vms_list, io_data
+    finished_queue.put(True)  # Ensures the monitor process is terminated
+    p_monitor.join()
+
+    stats: Stats = monitor_queue.get()
+    return result, stats
 
 
-def get_values_to_substract(pid: int | None) -> Tuple[int, int, Dict[str, int]]:
+def get_values_to_substract(pid: int | None, look_for_children: bool) -> Stats:
     """
     Get initial values to substract them later. This triggers a new process to avoid overhead of the current process.
 
@@ -182,13 +154,25 @@ def get_values_to_substract(pid: int | None) -> Tuple[int, int, Dict[str, int]]:
                 - "write_bytes": The initial write bytes.
     """
     data_to_substract_queue: Queue = Queue()
-    p_pre_monitor: Process = Process(target=get_initial_snapshot_data, args=(pid, data_to_substract_queue))
+    success_queue: Queue = Queue()
+
+    p_pre_monitor: Process = Process(
+        target=get_initial_snapshot_data, args=(pid, data_to_substract_queue, success_queue, look_for_children)
+    )
     p_pre_monitor.start()
-    p_pre_monitor.join()
+
+    if not success_queue.get():
+        p_pre_monitor.terminate()
+        stats_void = Stats()
+        data_to_substract_queue.put(stats_void)
+    else:
+        p_pre_monitor.join()
     return data_to_substract_queue.get()
 
 
-def get_initial_snapshot_data(pid: int | None, data_to_substract_queue: Queue) -> None:
+def get_initial_snapshot_data(
+    pid: int | None, data_to_substract_queue: Queue, success_queue: Queue, look_for_children: bool
+) -> None:
     """
     Get the initial snapshot data for a process with the given process ID.
     This data will be used later to substract it from the final read data.
@@ -200,65 +184,40 @@ def get_initial_snapshot_data(pid: int | None, data_to_substract_queue: Queue) -
     Returns:
         None: This function does not return anything. It sends the initial snapshot data to the passed queue.
     """
-    p: psutil.Process = psutil.Process(pid)
-    memory_info = p.memory_info()
-    memory_rss: int = memory_info.rss
-    memory_vms: int = memory_info.vms
-    io_counters = p.io_counters()
-    io_data: Dict[str, int] = {
-        "read_count": io_counters.read_count,
-        "write_count": io_counters.write_count,
-        "read_bytes": io_counters.read_bytes,
-        "write_bytes": io_counters.write_bytes,
-    }
-    data_to_substract_queue.put((memory_rss, memory_vms, io_data))
+    try:
+        p: psutil.Process = psutil.Process(pid)
+
+        _, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(p, 0.0, look_for_children)
+        read_count, write_count, read_bytes, write_bytes = get_io_counters(p, look_for_children)
+        stats = Stats(
+            memory_percentage_avg=memory_percent,
+            rss_bytes_avg=memory_rss,
+            vms_bytes_avg=memory_vms,
+            read_count=read_count,
+            write_count=write_count,
+            read_bytes=read_bytes,
+            write_bytes=write_bytes,
+        )
+        success_queue.put(True)
+
+    except Exception as e:
+        success_queue.put(False)
+        stats = Stats()
+        print(f"Error getting initial snapshot data: {e}")
+    finally:
+        data_to_substract_queue.put(stats)
 
 
-def check_is_recursive_func(func: Callable, potential_recursion_func_stack: deque[Callable]) -> bool:
-    """
-    Checks if the function is being called recursively by checking the stack of called functions.
-    It will send a warning if the function is being called recursively.
-    Args:
-        func (Callable): The function to check for recursion.
-        potential_recursion_func_stack (deque[Callable]): A stack of potential recursive functions.
-    Returns:
-        bool: True if the function is being called recursively, False otherwise.
-
-    """
-
-    if potential_recursion_func_stack and potential_recursion_func_stack[-1] == func:
-        potential_recursion_func_stack.append(func)
-        # Check if the function is being called recursively by checking the object identity. This is way faster than using getFrameInfo
-        warning_msg = "Recursive function detected. This process may be slow. Consider wrapping the recursive function in another function and applying the @tempit decorator to the new function."
-        warnings.warn(warning_msg, stacklevel=3)
-        return True
-    potential_recursion_func_stack.append(func)
-    return False
-
-
-def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[Callable, Tuple, Tuple]:
-    """
-    Extracts the callable function and arguments from a given function, if it is a method.
-    Args:
-        func (Callable): The function to extract the callable from.
-        *args: Variable length argument list.
-    Returns:
-        Tuple[Callable, Tuple, Tuple]: A tuple containing the extracted callable function, the modified arguments,
-        and the arguments to be printed.
-    """
-
-    callable_func: Callable = func
-    args_to_print: Tuple = args
-    is_method: bool = hasattr(args[0], func.__name__) if args else False
-
-    if is_method:
-        args_to_print = args[1:]
-        if isinstance(func, classmethod):
-            args = (args[0].__class__,) + args[1:]  # type: ignore
-            callable_func = func.__func__
-        elif isinstance(func, staticmethod):
-            args = args[1:]
-    return callable_func, args, args_to_print
+def get_process_by_pid(pid: int, refresh_rate: float) -> psutil.Process:
+    timeout: float = 10.0
+    while True:
+        if pid is not None and psutil.pid_exists(pid):
+            return psutil.Process(pid)
+        else:
+            time.sleep(refresh_rate)
+            if timeout < 0:
+                raise psutil.NoSuchProcess(pid)
+            timeout -= refresh_rate
 
 
 def monitor_process_pooling(pid: int, queue: Queue, finished_queue: Queue, look_for_children: bool = False) -> None:
@@ -274,133 +233,124 @@ def monitor_process_pooling(pid: int, queue: Queue, finished_queue: Queue, look_
     Returns:
         None: This function does not return anything. It sends the CPU, memory, and I/O usage data to the passed queue.
     """
-    # TODO: Add support for network usage?
-    cpu_usage_list: List[float] = []
-    memory_rss_list: List[int] = []
-    memory_vms_list: List[int] = []
-    io_data: Dict[str, int] = {}
+
     refresh_rate: float = 0.1  # Initial refresh rate
     max_refresh_rate: int = 5  # Maximum refresh rate
     time_elapsed: float = 0.0
-    timeout: float = 10.0
 
-    while True:
+    try:
+        p = get_process_by_pid(pid, refresh_rate)
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+        print(f"Error getting process data: {e}")
+        queue.put(Stats())
+        return
+
+    try:
+        # TODO: Add support for network usage?
+        cpu_usage_list: List[float] = []
+        memory_rss_list: List[int] = []
+        memory_vms_list: List[int] = []
+        memory_percent_list: List[float] = []
+        while True:
+            total_cpu, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(p, refresh_rate, look_for_children)
+            cpu_usage_list.append(total_cpu)
+            memory_rss_list.append(memory_rss)
+            memory_vms_list.append(memory_vms)
+            memory_percent_list.append(memory_percent)
+
+            if (not finished_queue.empty() and finished_queue.get()) or not p.is_running():
+                read_count, write_count, read_bytes, write_bytes = get_io_counters(p, look_for_children)
+
+                stats = Stats(
+                    cpu_percentage_avg=sum(cpu_usage_list) / len(cpu_usage_list),
+                    cpu_percentage_max=max(cpu_usage_list),
+                    memory_percentage_avg=sum(memory_percent_list) / len(memory_percent_list),
+                    rss_bytes_avg=sum(memory_rss_list) / len(memory_rss_list),
+                    rss_bytes_max=max(memory_rss_list),
+                    vms_bytes_avg=sum(memory_vms_list) / len(memory_vms_list),
+                    vms_bytes_max=max(memory_vms_list),
+                    read_count=read_count,
+                    write_count=write_count,
+                    read_bytes=read_bytes,
+                    write_bytes=write_bytes,
+                )
+                queue.put(stats)
+                return
+            time.sleep(refresh_rate)
+            time_elapsed += refresh_rate
+            if time_elapsed > 10:
+                if refresh_rate < max_refresh_rate:
+                    refresh_rate = min(refresh_rate * 2, max_refresh_rate)
+                    # Double the refresh rate, but do not exceed max_refresh_rate
+                time_elapsed = 0.0
+    except Exception as e:
+        print(f"Error getting data: {e}")
+        queue.put(Stats())
+        return
+
+
+def get_total_cpu_memory(
+    p: psutil.Process, refresh_rate: float, look_for_children: bool = False
+) -> Tuple[float, int, int, float]:
+    try:
+        total_cpu = p.cpu_percent(interval=refresh_rate)
+        memory_info = p.as_dict(attrs=["memory_info", "memory_percent"])
+
+        # Extract the values
+        memory_percent = memory_info["memory_percent"]
+        total_rss = memory_info["memory_info"].rss
+        total_vms = memory_info["memory_info"].vms
+
+        if look_for_children:
+            i = 0
+            for child in p.children(recursive=True):
+                try:
+                    # TODO: Maybe here we can get up to 100% CPU usage since it could be distributed through multiple processors.
+                    total_cpu += child.cpu_percent(interval=refresh_rate)
+
+                    child_memory_info = child.memory_info()
+                    total_rss += child_memory_info.rss
+                    total_vms += child_memory_info.vms
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+                i += 1
+
+            if i > 0:
+                # Get the avg CPU usage. Try with num_cores = psutil.cpu_count() and divide total_cpu by num_cores to get a maybe more accurate CPU usage.
+                # It won't show 100% if only one processor is used because it is distributed through multiple processors.
+                total_cpu = total_cpu / i
+
+        return total_cpu, total_rss, total_vms, memory_percent
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return 0.0, 0, 0, 0.0
+
+
+def get_io_counters(process: psutil.Process, look_for_children: bool = False) -> Tuple[int, int, int, int]:
+    read_count = 0
+    write_count = 0
+    read_bytes = 0
+    write_bytes = 0
+    if platform != "darwin":
         try:
-            if pid is not None and psutil.pid_exists(pid):
-                p: psutil.Process = psutil.Process(pid)
-                break
-            else:
-                time.sleep(refresh_rate)
-                if timeout < 0:
-                    raise psutil.NoSuchProcess(pid)
-                timeout -= refresh_rate
-
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            queue.put(([0], [0], [0], {"read_count": 0, "write_count": 0, "read_bytes": 0, "write_bytes": 0}))
-            return
-
-    def get_total_cpu_memory(
-        process: psutil.Process, refresh_rate: float, look_for_children: bool = False
-    ) -> Tuple[float, int, int]:
-        try:
-            total_cpu = process.cpu_percent(interval=refresh_rate)
-            memory_info = process.memory_info()
-            total_rss = memory_info.rss
-            total_vms = memory_info.vms
-
-            if look_for_children:
-                i = 0
-                for child in process.children(recursive=True):
-                    try:
-
-                        # TODO: Maybe here we can get up to 100% CPU usage since it could be distributed through multiple processors.
-                        total_cpu += child.cpu_percent(interval=refresh_rate)
-                        child_memory_info = child.memory_info()
-                        total_rss += child_memory_info.rss
-                        total_vms += child_memory_info.vms
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-                    i += 1
-
-                if i > 0:
-                    # Get the avg CPU usage. Try with num_cores = psutil.cpu_count() and divide total_cpu by num_cores to get a maybe more accurate CPU usage.
-                    # It won't show 100% if only one processor is used because it is distributed through multiple processors.
-                    total_cpu = total_cpu / i
-
-            return total_cpu, total_rss, total_vms
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return 0.0, 0, 0
-
-    def get_io_counters(process: psutil.Process, look_for_children: bool = False) -> Dict[str, int]:
-        try:
-            io_counters = process.io_counters()
-            io_data = {
-                "read_count": io_counters.read_count,
-                "write_count": io_counters.write_count,
-                "read_bytes": io_counters.read_bytes,
-                "write_bytes": io_counters.write_bytes,
-            }
+            io_counters = process.io_counters()  # type: ignore
+            read_count = io_counters.read_count
+            write_count = io_counters.write_count
+            read_bytes = io_counters.read_bytes
+            write_bytes = io_counters.write_bytes
 
             if look_for_children:
                 # Add child processes' I/O counters
                 for child in process.children(recursive=True):
-                    print("CHILDREN COUNTER")
                     try:
-                        child_io_counters = child.io_counters()
-                        io_data["read_count"] += child_io_counters.read_count
-                        io_data["write_count"] += child_io_counters.write_count
-                        io_data["read_bytes"] += child_io_counters.read_bytes
-                        io_data["write_bytes"] += child_io_counters.write_bytes
+                        child_io_counters = child.io_counters()  # type: ignore
+                        read_count += child_io_counters.read_count
+                        write_count += child_io_counters.write_count
+                        read_bytes += child_io_counters.read_bytes
+                        write_bytes += child_io_counters.write_bytes
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
         except (psutil.NoSuchProcess, psutil.AccessDenied):
-            io_data = {"read_count": 0, "write_count": 0, "read_bytes": 0, "write_bytes": 0}
-        return io_data
-
-    while True:
-        total_cpu, total_rss, total_vms = get_total_cpu_memory(p, refresh_rate, look_for_children)
-        cpu_usage_list.append(total_cpu)
-        memory_rss_list.append(total_rss)
-        memory_vms_list.append(total_vms)
-
-        if (not finished_queue.empty() and finished_queue.get()) or not p.is_running():
-            io_data = get_io_counters(p, look_for_children)
-            queue.put((cpu_usage_list, memory_rss_list, memory_vms_list, io_data))
-            return
-        time.sleep(refresh_rate)
-        time_elapsed += refresh_rate
-        if time_elapsed > 10:
-            if refresh_rate < max_refresh_rate:
-                refresh_rate = min(refresh_rate * 2, max_refresh_rate)
-                # Double the refresh rate, but do not exceed max_refresh_rate
-            time_elapsed = 0.0
-
-
-def substract_data(
-    memory_rss_to_substract: int,
-    memory_rss_list: List[int],
-    memory_vms_list_to_substract: int,
-    memory_vms_list: List[int],
-    io_data_to_substract: Dict[str, int],
-    io_data: Dict[str, int],
-) -> Tuple[List[int], List[int], Dict[str, int]]:
-    """
-    Subtracts the given values from the memory and IO data lists.
-    Args:
-        memory_rss_to_substract (int): The value to subtract from the memory RSS list.
-        memory_rss_list (List[int]): The list of memory RSS values.
-        memory_vms_list_to_substract (int): The value to subtract from the memory VMS list.
-        memory_vms_list (List[int]): The list of memory VMS values.
-        io_data_to_substract (Dict[str, int]): The dictionary of IO data values to subtract.
-        io_data (Dict[str, int]): The dictionary of IO data values.
-    Returns:
-        Tuple[List[int], List[int], Dict[str, int]]: A tuple containing the cleaned memory RSS list,
-        cleaned memory VMS list, and cleaned IO data dictionary.
-    """
-    cleaned_memory_rss_list: List[int] = [max(x - memory_rss_to_substract, 0) for x in memory_rss_list]
-    cleaned_memory_vms_list: List[int] = [max(x - memory_vms_list_to_substract, 0) for x in memory_vms_list]
-    cleaned_io_data: Dict[str, int] = {
-        key: max(io_data[key] - io_data_to_substract[key], 0) for key in io_data if key in io_data_to_substract
-    }
-
-    return cleaned_memory_rss_list, cleaned_memory_vms_list, cleaned_io_data
+            pass
+        except Exception:
+            pass
+    return read_count, write_count, read_bytes, write_bytes

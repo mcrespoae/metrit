@@ -4,9 +4,9 @@ import time
 # Deactivate the decorator
 from metrit import metrit
 
-# from metrit import metritConfig
-# metritConfig.ACTIVE = True  # Activates the decorator. Default option
-# metritConfig.ACTIVE = False  # Deactivates the decorator
+# from metrit import MetritConfig
+# MetritConfig.ACTIVE = True  # Activates the decorator. Default option
+# MetritConfig.ACTIVE = False  # Deactivates the decorator
 
 
 @metrit
@@ -91,7 +91,7 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     os.remove(file)
 
 
-# @metrit(verbose=True)
+@metrit(verbose=True)
 def main():
     """
     print("---CLASS EXAMPLES---")

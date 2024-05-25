@@ -1,3 +1,3 @@
-from .core import metritConfig, metrit
+from .core import MetritConfig, metrit
 
-__all__ = ["metrit", "metritConfig"]
+__all__ = ["metrit", "MetritConfig"]

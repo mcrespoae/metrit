@@ -1,3 +1,8 @@
+from collections import deque
+from typing import Callable, Tuple
+from warnings import warn
+
+
 def format_size(bytes_size: int | float) -> str:
     """
     Converts a size in bytes to a human-readable format.
@@ -13,81 +18,48 @@ def format_size(bytes_size: int | float) -> str:
     return f"{bytes_size:.2f} PB"  # If it exceeds TB, convert to petabytes
 
 
-def print_usage(
-    func_name: str,
-    args: tuple,
-    kwargs: dict,
-    cpu_usage_list: list[float],
-    memory_rss_list: list[int],
-    memory_vms_list: list[int],
-    io_counters_read: int,
-    io_counters_write: int,
-    io_read_bytes: int,
-    io_write_bytes: int,
-    verbose: bool = False,
-) -> None:
+def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[Callable, Tuple, Tuple]:
     """
-    Print the usage statistics for a function.
+    Extracts the callable function and arguments from a given function, if it is a method.
     Args:
-        func_name (str): The name of the function.
-        args (tuple): The arguments passed to the function.
-        kwargs (dict): The keyword arguments passed to the function.
-        cpu_usage_list (list[float]): A list of CPU usage values.
-        memory_rss_list (list[int]): A list of RSS memory usage values.
-        memory_vms_list (list[int]): A list of VMS memory usage values.
-        io_counters_read (int): The number of IO read operations.
-        io_counters_write (int): The number of IO write operations.
-        io_read_bytes (int): The number of bytes read.
-        io_write_bytes (int): The number of bytes written.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        func (Callable): The function to extract the callable from.
+        *args: Variable length argument list.
     Returns:
-        None
+        Tuple[Callable, Tuple, Tuple]: A tuple containing the extracted callable function, the modified arguments,
+        and the arguments to be printed.
     """
-    if cpu_usage_list:
-        cpu_max: float = max(cpu_usage_list)
-        cpu_avg: float = sum(cpu_usage_list) / len(cpu_usage_list)
 
-    else:
-        cpu_max: float = float("-inf")
-        cpu_avg: float = float("-inf")
+    callable_func: Callable = func
+    args_to_print: Tuple = args
+    is_method: bool = hasattr(args[0], func.__name__) if args else False
 
-    if memory_rss_list:
-        rss_max: int = max(memory_rss_list)
-        rss_avg: float = sum(memory_rss_list) / len(memory_rss_list)
+    if is_method:
+        args_to_print = args[1:]
+        if isinstance(func, classmethod):
+            args = (args[0].__class__,) + args[1:]  # type: ignore
+            callable_func = func.__func__
+        elif isinstance(func, staticmethod):
+            args = args[1:]
+    return callable_func, args, args_to_print
 
-    else:
-        rss_max = 0
-        rss_avg: float = float("-inf")
 
-    if memory_vms_list:
-        vms_max = max(memory_vms_list)
-        vms_avg = sum(memory_vms_list) / len(memory_vms_list)
-    else:
-        vms_max = 0
-        vms_avg: float = float("-inf")
+def check_is_recursive_func(func: Callable, potential_recursion_func_stack: deque[Callable]) -> bool:
+    """
+    Checks if the function is being called recursively by checking the stack of called functions.
+    It will send a warning if the function is being called recursively.
+    Args:
+        func (Callable): The function to check for recursion.
+        potential_recursion_func_stack (deque[Callable]): A stack of potential recursive functions.
+    Returns:
+        bool: True if the function is being called recursively, False otherwise.
 
-    if verbose:
-        print("*" * 5, f"metrit data for function {func_name}:", "*" * 5)
-        print(f"\tArgs: {args}.")
-        print(f"\tKwargs: {kwargs}.")
-        print(f"Maximum CPU usage: {cpu_max:.2f}%.")
-        print(f"Average CPU usage: {cpu_avg:.2f}%.")
-        print(f"Maximum RSS memory usage: {format_size(rss_max)}.")
-        print(f"Average RSS memory usage: {format_size(rss_avg)}.")
-        print(f"Maximum VMS memory usage: {format_size(vms_max)}.")
-        print(f"Average VMS memory usage: {format_size(vms_avg)}.")
-        print(f"IO read count: {io_counters_read}.")
-        print(f"IO bytes: {format_size(io_read_bytes)}.")
-        print(f"IO writes count: {io_counters_write}.")
-        print(f"IO bytes: {format_size(io_write_bytes)}.")
-        print("*" * 5, "End of metrit data.", "*" * 5)
-    else:
-        func_name_spacing = 30
-        func_name = f"'{func_name}'"
-        if len(func_name) > func_name_spacing:
-            func_name = func_name[: func_name_spacing - 4] + "..." + "'"
-        output_format = "Function {:30} {:>8} avg of memory {:>8.2f}% avg of CPU {:>8} IO reads {:>8} IO writes"
-        output = output_format.format(
-            func_name, format_size(rss_avg), cpu_avg, format_size(io_read_bytes), format_size(io_write_bytes)
-        )
-        print(output)
+    """
+
+    if potential_recursion_func_stack and potential_recursion_func_stack[-1] == func:
+        potential_recursion_func_stack.append(func)
+        # Check if the function is being called recursively by checking the object identity. This is way faster than using getFrameInfo
+        warning_msg = "Recursive function detected. This process may be slow. Consider wrapping the recursive function in another function and applying the @tempit decorator to the new function."
+        warn(warning_msg, stacklevel=3)
+        return True
+    potential_recursion_func_stack.append(func)
+    return False
