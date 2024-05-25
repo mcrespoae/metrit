@@ -67,7 +67,7 @@ def print_usage(
         vms_avg: float = float("-inf")
 
     if verbose:
-        print("*" * 5, f"measureit data for function {func_name}:", "*" * 5)
+        print("*" * 5, f"metrit data for function {func_name}:", "*" * 5)
         print(f"\tArgs: {args}.")
         print(f"\tKwargs: {kwargs}.")
         print(f"Maximum CPU usage: {cpu_max:.2f}%.")
@@ -80,7 +80,7 @@ def print_usage(
         print(f"IO bytes: {format_size(io_read_bytes)}.")
         print(f"IO writes count: {io_counters_write}.")
         print(f"IO bytes: {format_size(io_write_bytes)}.")
-        print("*" * 5, "End of measureit data.", "*" * 5)
+        print("*" * 5, "End of metrit data.", "*" * 5)
     else:
         func_name_spacing = 30
         func_name = f"'{func_name}'"

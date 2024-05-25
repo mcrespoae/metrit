@@ -2,34 +2,34 @@ import os
 import unittest
 from time import sleep
 
-from measurit import measureit
+from metrit import metrit
 
 
-@measureit
+@metrit
 class MeasureTestClassWithArgs:
-    @measureit
+    @metrit
     def __init__(self, a: int = 1, b: int = 2):
         self.sum = a + b
 
 
-@measureit
+@metrit
 class MeasureTestClass:
-    @measureit
-    def measureit_basic(self, a: int = 1, b: int = 2):
+    @metrit
+    def metrit_basic(self, a: int = 1, b: int = 2):
         return a + b
 
-    @measureit
+    @metrit
     @staticmethod
     def static_method(a: int = 1, b: int = 2):
         return a + b
 
-    @measureit
+    @metrit
     @classmethod
     def class_method(cls, a: int = 1, b: int = 2):
         return cls.__name__, a + b
 
 
-@measureit
+@metrit
 def fill_ram(size_in_mb, duration_in_seconds):
     size_in_bytes = size_in_mb * 1024 * 1024
     _ = bytearray(size_in_bytes)
@@ -37,7 +37,7 @@ def fill_ram(size_in_mb, duration_in_seconds):
     return 1 + 2
 
 
-@measureit()
+@metrit()
 def cpu_intensive(a: int = 1, b: int = 2) -> int:
     for _ in range(10):
         for _ in range(10_000_000):
@@ -45,7 +45,7 @@ def cpu_intensive(a: int = 1, b: int = 2) -> int:
     return a + b
 
 
-@measureit
+@metrit
 def recursive_func(n):
     if n < 2:
         return n
@@ -58,12 +58,12 @@ def fib(n):
     return fib(n - 2) + fib(n - 1)
 
 
-@measureit
+@metrit
 def wrapped_recursive_func(n):
     return fib(n)
 
 
-@measureit
+@metrit
 def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     file = ".temp_file"
     with open(file, "wb") as f:
@@ -76,15 +76,15 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     os.remove(file)
 
 
-class TestMeasureitFunctions(unittest.TestCase):
+class TestmetritFunctions(unittest.TestCase):
 
     def test_MeasureTestClassWithArgs(self):
         obj = MeasureTestClassWithArgs(3, b=6)
         self.assertEqual(obj.sum, 9)
 
-    def test_measureit_basic(self):
+    def test_metrit_basic(self):
         obj = MeasureTestClass()
-        result = obj.measureit_basic()
+        result = obj.metrit_basic()
         self.assertEqual(result, 3)
 
     def test_static_method(self):

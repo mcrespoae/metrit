@@ -1,14 +1,14 @@
 
-# measuit
+# metrit
 
-![PyPI](https://img.shields.io/pypi/v/measureit?label=pypi%20package)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/measureit)
+![PyPI](https://img.shields.io/pypi/v/metrit?label=pypi%20package)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/metrit)
 
 ## TODO
 
 ## License
 
-This project is licensed under the [MIT License](https://github.com/mcrespoae/measureit/blob/main/LICENSE).
+This project is licensed under the [MIT License](https://github.com/mcrespoae/metrit/blob/main/LICENSE).
 
 ## Contributors
 

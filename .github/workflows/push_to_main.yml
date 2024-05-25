@@ -6,10 +6,10 @@ name: Python push to main - Run test and lint
 on:
   push:
     branches: [ "main" ]
-    paths: measurit/**.py
+    paths: metrit/**.py
   pull_request:
     branches: [ "main" ]
-    paths: measurit/**.py
+    paths: metrit/**.py
 
 jobs:
     build:

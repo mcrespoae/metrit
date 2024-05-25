@@ -12,7 +12,7 @@ setuptools = "==69.5.*"
 wheel = "==0.43.*"
 twine = "==5.0.*"
 build = "==1.2.*"
-measurit = {file = ".", editable = true}
+metrit = {file = ".", editable = true}
 
 [requires]
 python_version = "3.12"

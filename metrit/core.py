@@ -8,16 +8,16 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import psutil
 
-from measurit.utils import print_usage
+from metrit.utils import print_usage
 
 
-class MeasuritConfig:
+class metritConfig:
     ACTIVE: bool = True
 
 
-def measureit(*args: Any, verbose: bool = False) -> Callable:
+def metrit(*args: Any, verbose: bool = False) -> Callable:
     """
-    Decorator function that measures the cpu, ram and io footprint of a given function in the current process. It can be called like @measurit or using arguments @measurit(...)
+    Decorator function that measures the cpu, ram and io footprint of a given function in the current process. It can be called like @metrit or using arguments @metrit(...)
 
     Args:
         args: contains the function to be decorated if no arguments are provided when calling the decorator
@@ -33,7 +33,7 @@ def measureit(*args: Any, verbose: bool = False) -> Callable:
 
     Notes:
         - Processes spawned inside the decorated function won't be measured
-        - This decorator also checks for recursion automatically even though is better to wrap the recursive function in another function and apply the @measurit decorator to the new function.
+        - This decorator also checks for recursion automatically even though is better to wrap the recursive function in another function and apply the @metrit decorator to the new function.
         - Classes will be returned unmodified and will not be decorated.
         - If the function is a method, the first argument will be removed from `args_to_print`.
         - If the function is a class method, the first argument will be replaced with the class itself.
@@ -42,19 +42,19 @@ def measureit(*args: Any, verbose: bool = False) -> Callable:
 
 
     Example:
-        @measurit(verbose=True)
+        @metrit(verbose=True)
         def my_function(arg1, arg2):
             # function body
 
-        @measurit
+        @metrit
         def my_function(arg1, arg2):
             # function body
 
         # The decorated function can be used as usual
         result = my_function(arg1_value, arg2_value)
     """
-    if not MeasuritConfig.ACTIVE:
-        # Return the callable unmodified if MeasuritConfig.ACTIVE is set to False
+    if not metritConfig.ACTIVE:
+        # Return the callable unmodified if metritConfig.ACTIVE is set to False
         if args:
             return args[0]
         else:
@@ -68,7 +68,7 @@ def measureit(*args: Any, verbose: bool = False) -> Callable:
         potential_recursion_func_stack: deque[Callable] = deque()
 
         @wraps(func)
-        def measureit_wrapper(*args: Tuple, **kwargs: Dict) -> Any:
+        def metrit_wrapper(*args: Tuple, **kwargs: Dict) -> Any:
             nonlocal potential_recursion_func_stack
             is_recursive: bool = check_is_recursive_func(func, potential_recursion_func_stack)
             callable_func, args, args_to_print = extract_callable_and_args_if_method(func, *args)
@@ -121,7 +121,7 @@ def measureit(*args: Any, verbose: bool = False) -> Callable:
 
             return result
 
-        return measureit_wrapper
+        return metrit_wrapper
 
     if args:  # If arguments are not provided, return a decorator
         return decorator(*args)
