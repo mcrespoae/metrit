@@ -1,4 +1,5 @@
 import inspect
+import os
 import time
 from collections import deque
 from functools import partial, wraps
@@ -84,9 +85,10 @@ def _decorator(func: Callable, verbose: bool = False, look_for_children: bool = 
         # Get the memory footprint before the function is called
         pid: int = current_process().pid  # type: ignore
         try:
-            stats_to_sub: Stats = get_values_to_substract(pid, look_for_children)
+            stats_to_sub, children_stats_to_sub_list = get_values_to_substract(pid, look_for_children)
         except Exception:
             stats_to_sub = Stats()
+            children_stats_to_sub_list = []
 
         result, measured_stats = call_func_and_measure_data(pid, callable_func, *args, **kwargs)
         cleaned_stats: Stats = measured_stats - stats_to_sub
@@ -147,7 +149,7 @@ def call_func_and_measure_data(pid: int | None, func: Callable, *args: Tuple, **
     return result, stats
 
 
-def get_values_to_substract(pid: int | None, look_for_children: bool) -> Stats:
+def get_values_to_substract(pid: int | None, look_for_children: bool) -> Tuple[Stats, List[Stats]]:
     """
     Get initial values to substract them later. This triggers a new process to avoid overhead of the current process.
 
@@ -169,7 +171,8 @@ def get_values_to_substract(pid: int | None, look_for_children: bool) -> Stats:
     if not success_queue.get():
         p_pre_monitor.terminate()
         stats_void = Stats()
-        data_to_substract_queue.put(stats_void)
+        children_stats_to_sub_list: List[Stats] = []
+        data_to_substract_queue.put((stats_void, children_stats_to_sub_list))
     else:
         p_pre_monitor.join()
     return data_to_substract_queue.get()
@@ -194,10 +197,10 @@ def get_initial_snapshot_data(
     """
     try:
         p: psutil.Process = psutil.Process(pid)
-
-        _, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(p, 0.0, look_for_children)
-        read_count, write_count, read_bytes, write_bytes = get_io_counters(p, look_for_children)
+        _, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(p, 0.0)
+        read_count, write_count, read_bytes, write_bytes = get_io_counters(p)
         stats = Stats(
+            pid=p.pid,
             memory_percentage_avg=memory_percent,
             rss_bytes_avg=memory_rss,
             vms_bytes_avg=memory_vms,
@@ -206,6 +209,24 @@ def get_initial_snapshot_data(
             read_bytes=read_bytes,
             write_bytes=write_bytes,
         )
+        children_stats_list: List[Stats] = []
+        if look_for_children:
+            for child in p.children(recursive=True):
+                if child.pid == os.getpid():  # Avoid counting the current process
+                    continue
+                _, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(child, 0.0)
+                read_count, write_count, read_bytes, write_bytes = get_io_counters(child)
+                child_stats = Stats(
+                    pid=child.pid,
+                    memory_percentage_avg=memory_percent,
+                    rss_bytes_avg=memory_rss,
+                    vms_bytes_avg=memory_vms,
+                    read_count=read_count,
+                    write_count=write_count,
+                    read_bytes=read_bytes,
+                    write_bytes=write_bytes,
+                )
+            children_stats_list.append(child_stats)
         success_queue.put(True)
 
     except Exception as e:
@@ -213,7 +234,7 @@ def get_initial_snapshot_data(
         stats = Stats()
         print(f"Error getting initial snapshot data: {e}")
     finally:
-        data_to_substract_queue.put(stats)
+        data_to_substract_queue.put((stats, children_stats_list))
 
 
 def get_process_by_pid(pid: int, refresh_rate: float) -> psutil.Process:
@@ -273,15 +294,31 @@ def monitor_process_pooling(pid: int, queue: Queue, finished_queue: Queue, look_
         memory_rss_list: List[int] = []
         memory_vms_list: List[int] = []
         memory_percent_list: List[float] = []
+        children_stats_list: List[Stats] = []
+        children_data = {}
+
         while True:
-            total_cpu, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(p, refresh_rate, look_for_children)
+            total_cpu, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(p, refresh_rate)
+
             cpu_usage_list.append(total_cpu)
             memory_rss_list.append(memory_rss)
             memory_vms_list.append(memory_vms)
             memory_percent_list.append(memory_percent)
+            if look_for_children:
+                for child in p.children(recursive=True):
+                    if child.pid == os.getpid():
+                        continue
+                    total_cpu, memory_rss, memory_vms, memory_percent = get_total_cpu_memory(child, refresh_rate)
+                    # TODO for each children we need to store this values and then create the stats object
 
+                    children_data[child.pid] = {
+                        "total_cpu": total_cpu,
+                        "memory_rss": memory_rss,
+                        "memory_vms": memory_vms,
+                        "memory_percent": memory_percent,
+                    }
             if (not finished_queue.empty() and finished_queue.get()) or not p.is_running():
-                read_count, write_count, read_bytes, write_bytes = get_io_counters(p, look_for_children)
+                read_count, write_count, read_bytes, write_bytes = get_io_counters(p)
 
                 stats = Stats(
                     cpu_percentage_avg=sum(cpu_usage_list) / len(cpu_usage_list),
@@ -311,22 +348,19 @@ def monitor_process_pooling(pid: int, queue: Queue, finished_queue: Queue, look_
         return
 
 
-def get_total_cpu_memory(
-    p: psutil.Process, refresh_rate: float, look_for_children: bool = False
-) -> Tuple[float, int, int, float]:
+def get_total_cpu_memory(p: psutil.Process, refresh_rate: float) -> Tuple[float, int, int, float]:
     """
-    Retrieves the total CPU usage, total RSS memory, total VMS memory, and memory percentage of a given process and its children.
+    Retrieves the total CPU usage, total RSS memory, total VMS memory, and memory percentage of a given process.
 
     Args:
         p (psutil.Process): The process object to retrieve the information from.
         refresh_rate (float): The interval in seconds between each CPU and memory usage measurement.
-        look_for_children (bool, optional): Whether to include the CPU and memory usage of the process's children. Defaults to False.
 
     Returns:
         Tuple[float, int, int, float]: A tuple containing the total CPU usage (float), total RSS memory (int), total VMS memory (int), and memory percentage (float).
 
     Note:
-        - If the process or its children do not exist or access is denied, the function returns (0.0, 0, 0, 0.0).
+        - If the process do not exist or access is denied, the function returns (0.0, 0, 0, 0.0).
     """
     try:
         total_cpu = p.cpu_percent(interval=refresh_rate)
@@ -336,44 +370,23 @@ def get_total_cpu_memory(
         memory_percent = memory_info["memory_percent"]
         total_rss = memory_info["memory_info"].rss
         total_vms = memory_info["memory_info"].vms
-
-        if look_for_children:
-            i = 0
-            for child in p.children(recursive=True):
-                try:
-                    # TODO: Maybe here we can get up to 100% CPU usage since it could be distributed through multiple processors.
-                    total_cpu += child.cpu_percent(interval=refresh_rate)
-
-                    child_memory_info = child.memory_info()
-                    total_rss += child_memory_info.rss
-                    total_vms += child_memory_info.vms
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-                i += 1
-
-            if i > 0:
-                # Get the avg CPU usage. Try with num_cores = psutil.cpu_count() and divide total_cpu by num_cores to get a maybe more accurate CPU usage.
-                # It won't show 100% if only one processor is used because it is distributed through multiple processors.
-                total_cpu = total_cpu / i
-
         return total_cpu, total_rss, total_vms, memory_percent
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return 0.0, 0, 0, 0.0
 
 
-def get_io_counters(process: psutil.Process, look_for_children: bool = False) -> Tuple[int, int, int, int]:
+def get_io_counters(process: psutil.Process) -> Tuple[int, int, int, int]:
     """
     Retrieves the I/O counters of a given process and its children.
 
     Args:
         process (psutil.Process): The process object to retrieve the I/O counters from.
-        look_for_children (bool, optional): Whether to include the I/O counters of the process's children. Defaults to False.
 
     Returns:
         Tuple[int, int, int, int]: A tuple containing the read count, write count, read bytes, and write bytes.
 
     Note:
-        - If the process or its children do not exist or access is denied, the function returns (0, 0, 0, 0).
+        - If the process do not exist or access is denied, the function returns (0, 0, 0, 0).
         - If the platform is macOS, the function returns (0, 0, 0, 0).
         - If an exception occurs during the retrieval of the I/O counters, the function returns (0, 0, 0, 0).
     """
@@ -388,18 +401,6 @@ def get_io_counters(process: psutil.Process, look_for_children: bool = False) ->
             write_count = io_counters.write_count
             read_bytes = io_counters.read_bytes
             write_bytes = io_counters.write_bytes
-
-            if look_for_children:
-                # Add child processes' I/O counters
-                for child in process.children(recursive=True):
-                    try:
-                        child_io_counters = child.io_counters()  # type: ignore
-                        read_count += child_io_counters.read_count
-                        write_count += child_io_counters.write_count
-                        read_bytes += child_io_counters.read_bytes
-                        write_bytes += child_io_counters.write_bytes
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
         except Exception:

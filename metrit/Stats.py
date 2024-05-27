@@ -1,4 +1,5 @@
 from sys import platform
+from typing import Optional
 
 from .utils import format_size
 
@@ -6,6 +7,7 @@ from .utils import format_size
 class Stats:
     def __init__(
         self,
+        pid: Optional[int] = None,
         cpu_percentage_max: float = 0.0,
         cpu_percentage_avg: float = 0.0,
         memory_percentage_avg: float = 0.0,
@@ -18,6 +20,7 @@ class Stats:
         write_bytes: int = 0,
         read_bytes: int = 0,
     ):
+        self.pid: Optional[int] = pid
         self.cpu_percentage_avg: float = cpu_percentage_avg
         self.cpu_percentage_max: float = cpu_percentage_max
         self.memory_percentage_avg: float = memory_percentage_avg
