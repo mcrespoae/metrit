@@ -14,7 +14,7 @@ else
 
 endif
 
-.PHONY: install example test clean
+.PHONY: install build example test check clean upload_pypi upload-testpypi
 
 install:
 	$(info Installing the repo)
@@ -44,6 +44,24 @@ else
 	$(RMDIR) .eggs
 	$(RMDIR) metrit.egg-info
 endif
+
+build:
+	$(VENV_ACTIVATE) $(PYTHON) -m build
+
+check:
+	$(VENV_ACTIVATE) $(PYTHON) setup.py check
+
+upload-pypi: clean install test build check
+# Upload to PyPI. Make sure you have in your ~/.pypirc file in home directory
+	$(VENV_ACTIVATE) $(PYTHON) -m twine upload dist/*
+
+upload-testpypi: clean install test build check
+# Upload to TestPyPI. Make sure you have in your ~/.pypirc file in home directory
+# Use $(PYTHON) -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ tempit
+# for installing the testpypi version
+# or use pipenv install tempit -i https://test.pypi.org/simple
+	$(VENV_ACTIVATE) $(PYTHON) -m twine upload --repository testpypi dist/*
+
 
 
 

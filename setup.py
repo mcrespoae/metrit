@@ -11,8 +11,8 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/mcrespoae/metrit",
-    install_requires=["psutil==5.9.8", "joblib==1.4.2", "multiprocess==0.70.16"],
-    setup_requires=["psutil==5.9.8", "joblib==1.4.2", "multiprocess==0.70.16"],
+    install_requires=["psutil==5.9.8", "multiprocess==0.70.16"],
+    setup_requires=["psutil==5.9.8", "multiprocess==0.70.16"],
     python_requires=">=3.8",
     keywords=["metrit"],
     classifiers=[
