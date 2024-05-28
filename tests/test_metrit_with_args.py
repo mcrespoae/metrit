@@ -5,35 +5,34 @@ from time import sleep
 from metrit.core import MetritConfig, metrit
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-
 MetritConfig.ACTIVE = True
 
 
-@metrit
+@metrit(verbose=True)
 class MetritTestClassWithArgs:
-    @metrit
+    @metrit(verbose=True, find_children=True, isolate=True)
     def __init__(self, a: int = 1, b: int = 2):
         self.sum = a + b
 
 
-@metrit
+@metrit(verbose=True, find_children=True, isolate=True)
 class MetritTestClass:
-    @metrit
+    @metrit(verbose=True, find_children=True, isolate=True)
     def metrit_basic(self, a: int = 1, b: int = 2):
         return a + b
 
-    @metrit
+    @metrit(verbose=True, find_children=True, isolate=True)
     @staticmethod
     def static_method(a: int = 1, b: int = 2):
         return a + b
 
-    @metrit
+    @metrit(verbose=True, find_children=True, isolate=True)
     @classmethod
     def class_method(cls, a: int = 1, b: int = 2):
         return cls.__name__, a + b
 
 
-@metrit
+@metrit(verbose=True, find_children=True, isolate=True)
 def fill_ram(size_in_mb, duration_in_seconds):
     size_in_bytes = int(size_in_mb * 1024 * 1024)
     _ = bytearray(size_in_bytes)
@@ -41,7 +40,7 @@ def fill_ram(size_in_mb, duration_in_seconds):
     return 1 + 2
 
 
-@metrit()
+@metrit(verbose=True, find_children=True, isolate=True)
 def cpu_intensive(a: int = 1, b: int = 2) -> int:
     for _ in range(2):
         for _ in range(1_000):
@@ -49,7 +48,7 @@ def cpu_intensive(a: int = 1, b: int = 2) -> int:
     return a + b
 
 
-@metrit
+@metrit(verbose=True, find_children=True, isolate=True)
 def recursive_func(n):
     if n < 2:
         return n
@@ -62,12 +61,12 @@ def fib(n):
     return fib(n - 2) + fib(n - 1)
 
 
-@metrit
+@metrit(verbose=True, find_children=True, isolate=True)
 def wrapped_recursive_func(n):
     return fib(n)
 
 
-@metrit
+@metrit(verbose=True, find_children=True, isolate=True)
 def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     file = ".temp_file"
     with open(file, "wb") as f:
@@ -80,7 +79,9 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     os.remove(file)
 
 
-class TestMetritFunctions(unittest.TestCase):
+class TestMetritFunctionsWithArgs(unittest.TestCase):
+    MetritConfig.ACTIVE = True
+
     def setUp(self):
         MetritConfig.ACTIVE = True
 

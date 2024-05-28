@@ -2,13 +2,13 @@ import os
 import unittest
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-from metrit.core import metrit, metritConfig
+from metrit.core import MetritConfig, metrit
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-metritConfig.ACTIVE = False
+MetritConfig.ACTIVE = False
 
 
-class metritTestClassDeactivated:
+class MetritTestClassDeactivated:
 
     @metrit()
     def metrit_basic(self, a: int = 0, b: int = 1):
@@ -21,11 +21,11 @@ class metritTestClassDeactivated:
     def sum(self, a: int = 1, b: int = 2):
         return a + b
 
-    @metrit(run_times=2)
+    @metrit(verbose=True, find_children=True)
     def test_metrit_args(self, a: int = 0, b: int = 1):
         return self.sum(a, b)
 
-    @metrit(run_times=2)
+    @metrit(isolate=True)
     @staticmethod
     def static_method(a: int = 0, b: int = 1):
         return a + b
@@ -38,7 +38,7 @@ class metritTestClassDeactivated:
 
 class TestmetritDecoratorClassDeactivated(unittest.TestCase):
     def setUp(self):
-        self.test_class = metritTestClassDeactivated()
+        self.test_class = MetritTestClassDeactivated()
 
     def test_metrit_basic(self):
         result_1 = self.test_class.metrit_basic(1, b=2)
@@ -67,9 +67,9 @@ class TestmetritDecoratorClassDeactivated(unittest.TestCase):
     def test_metrit_class_method(self):
         class_name_1, result_1 = self.test_class.class_method(1, b=2)
         class_name_2, result_2 = self.test_class.class_method()
-        self.assertEqual(class_name_1, "metritTestClassDeactivated")
+        self.assertEqual(class_name_1, "MetritTestClassDeactivated")
         self.assertEqual(result_1, 3)
-        self.assertEqual(class_name_2, "metritTestClassDeactivated")
+        self.assertEqual(class_name_2, "MetritTestClassDeactivated")
         self.assertEqual(result_2, 1)
 
     def test_metrit_run_from_other_thread(self):
@@ -91,7 +91,7 @@ class TestmetritDecoratorClassDeactivated(unittest.TestCase):
             future = executor.submit(self.test_class.class_method, 1, b=2)
             class_name, result = future.result()
 
-        self.assertEqual(class_name, "metritTestClassDeactivated")
+        self.assertEqual(class_name, "MetritTestClassDeactivated")
         self.assertEqual(result, 3)
 
     def test_metrit_class_method_run_from_other_process(self):
@@ -99,7 +99,7 @@ class TestmetritDecoratorClassDeactivated(unittest.TestCase):
             future = executor.submit(self.test_class.class_method, 2, b=6)
             class_name, result = future.result()
 
-        self.assertEqual(class_name, "metritTestClassDeactivated")
+        self.assertEqual(class_name, "MetritTestClassDeactivated")
         self.assertEqual(result, 8)
 
     def test_metrit_static_method_from_other_thread(self):
@@ -117,7 +117,11 @@ class TestmetritDecoratorClassDeactivated(unittest.TestCase):
         self.assertEqual(result, 3)
 
 
-class TestmetritDeactivated(unittest.TestCase):
+class TestMetritDeactivated(unittest.TestCase):
+    MetritConfig.ACTIVE = False
+
+    def setUp(self):
+        MetritConfig.ACTIVE = False
 
     def test_metrit_basic_deactivated(self):
         @metrit
@@ -128,7 +132,7 @@ class TestmetritDeactivated(unittest.TestCase):
         self.assertEqual(my_function(), 1)
 
     def test_metrit_with_args_deactivated(self):
-        @metrit(run_times=0, concurrent_execution=True, verbose=True)
+        @metrit(verbose=True)
         def my_function(a: int = 0, b: int = 1):
             return a + b
 
@@ -178,7 +182,7 @@ class TestmetritDeactivated(unittest.TestCase):
 
 
 # Added here since calling a function from another process inside a test method doesn't work
-@metrit(run_times=2, concurrent_execution=True, verbose=True)
+@metrit(find_children=True, isolate=True, verbose=True)
 def my_process_function_deactivated(a: int = 0, b: int = 1):
     return a + b
 

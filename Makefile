@@ -14,7 +14,7 @@ else
 
 endif
 
-.PHONY: install example
+.PHONY: install example test clean
 
 install:
 	$(info Installing the repo)
@@ -28,19 +28,21 @@ endif
 example:
 	$(VENV_ACTIVATE) $(PYTHON) examples/examples.py
 
+test:
+	$(VENV_ACTIVATE) $(PYTHON) -m unittest discover -v -s ./tests -p "*test*.py"
 
 clean:
 ifeq ($(OS),Windows_NT)
 	@if exist build $(RMDIR) build
 	@if exist dist $(RMDIR) dist
 	@if exist .eggs $(RMDIR) .eggs
-	@if exist tempit.egg-info $(RMDIR) tempit.egg-info
+	@if exist metrit.egg-info $(RMDIR) metrit.egg-info
 
 else
 	$(RMDIR) build
 	$(RMDIR) dist
 	$(RMDIR) .eggs
-	$(RMDIR) tempit.egg-info
+	$(RMDIR) metrit.egg-info
 endif
 
 

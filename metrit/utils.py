@@ -13,12 +13,14 @@ def format_size(bytes_size: int | float) -> str:
     """
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if bytes_size < 1024:
+            if unit == "B":
+                return f"{bytes_size:.0f}{unit}"
             return f"{bytes_size:.2f}{unit}"
         bytes_size /= 1024
-    return f"{bytes_size:.2f} PB"  # If it exceeds TB, convert to petabytes
+    return f"{bytes_size:.2f}PB"  # If it exceeds TB, convert to petabytes
 
 
-def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[Callable, Tuple, Tuple]:
+def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[Callable, Tuple, Tuple, bool]:
     """
     Extracts the callable function and arguments from a given function, if it is a method.
     Args:
@@ -40,7 +42,7 @@ def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[C
             callable_func = func.__func__
         elif isinstance(func, staticmethod):
             args = args[1:]
-    return callable_func, args, args_to_print
+    return callable_func, args, args_to_print, is_method
 
 
 def check_is_recursive_func(func: Callable, potential_recursion_func_stack: deque[Callable]) -> bool:
@@ -58,7 +60,7 @@ def check_is_recursive_func(func: Callable, potential_recursion_func_stack: dequ
     if potential_recursion_func_stack and potential_recursion_func_stack[-1] == func:
         potential_recursion_func_stack.append(func)
         # Check if the function is being called recursively by checking the object identity. This is way faster than using getFrameInfo
-        warning_msg = "Recursive function detected. This process may be slow. Consider wrapping the recursive function in another function and applying the @tempit decorator to the new function."
+        warning_msg = "Recursive function detected. This process may be slow. Consider wrapping the recursive function in another function and applying the @metrit decorator to the new function."
         warn(warning_msg, stacklevel=3)
         return True
     potential_recursion_func_stack.append(func)

@@ -5,11 +5,13 @@ name = "pypi"
 
 [packages]
 psutil = "==5.9.8"
+joblib = "==1.4.2"
+multiprocess = "0.70.16"
 
 [dev-packages]
-setuptools = "==69.5.*"
+setuptools = "==70.0.*"
 wheel = "==0.43.*"
-twine = "==5.0.*"
+twine = "==5.1.*"
 build = "==1.2.*"
 metrit = {file = ".", editable = true}
 

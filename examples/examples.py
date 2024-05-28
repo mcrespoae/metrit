@@ -33,7 +33,7 @@ class MeasureTestClass:
         return cls.__name__, a + b
 
 
-@metrit
+@metrit(verbose=True, find_children=True, isolate=True)
 def fill_ram(size_in_mb, duration_in_seconds):
     """
     Simulate filling RAM by allocating memory.
@@ -73,7 +73,7 @@ def fib(n):
     return fib(n - 2) + fib(n - 1)
 
 
-@metrit
+@metrit(find_children=True)
 def wrapped_recursive_func(n):
     return fib(n)
 
@@ -89,11 +89,11 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     with open(file, "rb") as f:
         f.read()
     os.remove(file)
+    return num_writes + data_size
 
 
-@metrit(verbose=True, find_children=True)
+@metrit(verbose=True, find_children=True, isolate=True)
 def main():
-
     print("---CLASS EXAMPLES---")
     test_class_args = MeasureTestClassWithArgs(3, b=6)
     if test_class_args.sum != 9:
@@ -119,14 +119,16 @@ def main():
 
     print("---RECURSIVE EXAMPLES---")
     wrapped_recursive_func(21)
-    recursive_func(21)
+    recursive_func(12)
+
     print("---END RECURSIVE EXAMPLES---\n")
 
     print("---OTHER EXAMPLES---")
-    print(fill_ram(100, duration_in_seconds=5))  # 100MB
+
+    fill_ram(100, duration_in_seconds=2)  # 100MB
     cpu_intensive(3, b=4)
 
-    simulate_writes_and_reads(num_writes=5_000, data_size=1024)  # 5MB
+    simulate_writes_and_reads(5_000, data_size=1024)  # 5MB
     print("---END OTHER EXAMPLES---\n")
 
 
