@@ -24,9 +24,6 @@ classifiers = [
 Repository = "https://github.com/mcrespoae/metrit"
 
 
-#[tool.setuptools.dynamic]
-#version = {attr = "metrit.__version__"}
-
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
