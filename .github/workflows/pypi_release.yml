@@ -37,7 +37,7 @@ jobs:
       run: python -m build
 
     - name: Store the distribution packages
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: python-package-distributions
         path: dist/
@@ -48,18 +48,21 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
     needs: build
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+        id-token: write
 
     steps:
     - name: Download distribution packages
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: python-package-distributions
         path: dist/
 
-    - name: Publish distribution to PyPI
+    - name: Publish distribution to PyPI # TODO, use Trusted Publishing instead API Token:
       uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
+      #with:
+        #password: ${{ secrets.PYPI_API_TOKEN }}
 
   github-release:
     name: Sign the Python distribution with Sigstore and upload them to GitHub Release
@@ -73,7 +76,7 @@ jobs:
 
     steps:
     - name: Download all the dists
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: python-package-distributions
         path: dist/
