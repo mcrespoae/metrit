@@ -52,6 +52,10 @@ check:
 	$(VENV_ACTIVATE) $(PYTHON) setup.py check
 
 upload-pypi: clean install test build check
+# Don't use this method,
+# Instead use tags and the pypi_release.yml will upload the Github release and pypi
+# git tag 0.0.1 # or whatever version needed
+# git push origin --tags
 # Upload to PyPI. Make sure you have in your ~/.pypirc file in home directory
 	$(VENV_ACTIVATE) $(PYTHON) -m twine upload dist/*
 
