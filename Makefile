@@ -14,7 +14,7 @@ else
 
 endif
 
-.PHONY: install build example test check clean upload_pypi upload-testpypi
+.PHONY: install build example test clean upload_pypi upload-testpypi
 
 install:
 	$(info Installing the repo)
@@ -46,21 +46,22 @@ else
 endif
 
 build:
+# Use it only to check the version before uploading
 	$(VENV_ACTIVATE) $(PYTHON) -m build
-
-check:
-	$(VENV_ACTIVATE) $(PYTHON) setup.py check
 
 
 upload-pypi: clean install test build check
-# Don't use this method,
+# DEPRECATED
 # Instead use tags and the pypi_release.yml will upload the Github release and pypi
 # git tag 0.0.1 # or whatever version needed
 # git push origin --tags
+
 # Upload to PyPI. Make sure you have in your ~/.pypirc file in home directory
 	$(VENV_ACTIVATE) $(PYTHON) -m twine upload dist/*
 
 upload-testpypi: clean install test build check
+# DEPRECATED
+
 # Upload to TestPyPI. Make sure you have in your ~/.pypirc file in home directory
 # Use $(PYTHON) -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ tempit
 # for installing the testpypi version

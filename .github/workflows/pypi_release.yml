@@ -27,15 +27,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install build
 
-    #- name: Extract tag name
-    #  id: tag
-    #  run: echo "TAG_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
-
-    #- name: Update version in setup.py
-    #  env:
-    #    TAG_NAME: ${{ env.TAG_NAME }}
-    #  run: sed -i "s/{{VERSION_PLACEHOLDER}}/${{ env.TAG_NAME }}/g" setup.py
-
     - name: Build a binary wheel
       run: python -m build
 
