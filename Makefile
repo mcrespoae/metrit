@@ -51,6 +51,7 @@ build:
 check:
 	$(VENV_ACTIVATE) $(PYTHON) setup.py check
 
+
 upload-pypi: clean install test build check
 # Don't use this method,
 # Instead use tags and the pypi_release.yml will upload the Github release and pypi
