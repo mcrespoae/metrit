@@ -8,7 +8,7 @@ psutil = "==5.9.8"
 multiprocess = "0.70.16"
 
 [dev-packages]
-setuptools = "==70.0.*"
+setuptools-scm = "==8.1.*"
 wheel = "==0.43.*"
 twine = "==5.1.*"
 build = "==1.2.*"

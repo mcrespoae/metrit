@@ -1,8 +1,9 @@
 from setuptools import setup
 
+# version = "{{VERSION_PLACEHOLDER}}"
 setup(
     name="metrit",
-    version="{{VERSION_PLACEHOLDER}}",
+    use_scm_version=True,
     author="mcrespoae",
     author_email="info@mariocrespo.es",
     packages=["metrit"],
