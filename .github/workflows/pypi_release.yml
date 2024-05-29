@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
-        id-token: write
+        id-token: write # IMPORTANT: mandatory for trusted publishing
 
     steps:
     - name: Download distribution packages
@@ -59,10 +59,9 @@ jobs:
         name: python-package-distributions
         path: dist/
 
-    - name: Publish distribution to PyPI # TODO, use Trusted Publishing instead API Token:
+    - name: Publish distribution to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-      #with:
-        #password: ${{ secrets.PYPI_API_TOKEN }}
+
 
   github-release:
     name: Sign the Python distribution with Sigstore and upload them to GitHub Release
@@ -100,7 +99,7 @@ jobs:
         # Upload to GitHub Release using the `gh` CLI.
         # `dist/` contains the built packages, and the
         # sigstore-produced signatures and certificates.
-      run: >-
+      run: |
         gh release upload '${{ github.ref_name }}' dist/** --repo '${{ github.repository }}'
 
 
