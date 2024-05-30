@@ -2,7 +2,7 @@ import time
 from sys import platform
 from typing import Dict, Self
 
-from multiprocess import Process, Queue, current_process
+from multiprocess import Process, Queue, current_process  # type: ignore
 
 from .StatCollector import StatCollector
 from .Stats import RawStats, Stats

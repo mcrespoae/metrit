@@ -3,7 +3,7 @@ from sys import platform
 from typing import Dict, Tuple
 
 import psutil
-from multiprocess import Queue, current_process
+from multiprocess import Queue, current_process  # type: ignore
 
 from .Stats import RawStats, Stats
 

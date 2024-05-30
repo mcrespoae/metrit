@@ -3,6 +3,8 @@ from collections import deque
 from functools import partial, wraps
 from typing import Any, Callable, Dict, Tuple
 
+from multiprocess import Queue  # type: ignore
+
 from metrit.Monitoring import Monitoring
 from metrit.utils import check_is_recursive_func, extract_callable_and_args_if_method
 
@@ -11,14 +13,17 @@ class MetritConfig:
     ACTIVE: bool = True
 
 
-def metrit(*args: Any, verbose: bool = False, find_children: bool = False, isolate: bool = False) -> Callable:
+called_isolated_func_queue = Queue()
+
+
+def metrit(*args: Any, verbose: bool = False, find_children: bool = False, isolate: bool = True) -> Callable:
     """
     Decorator function that measures the cpu, ram and io footprint of a given function in the current process. It can be called like @metrit or using arguments @metrit(...)
 
     Args:
         args: contains the function to be decorated if no arguments are provided when calling the decorator
         verbose (bool, optional): Whether to print detailed information after execution. Defaults to False.
-        isolate (bool, optional): If True, encapsulates the function in its own process. Defaults to False.
+        isolate (bool, optional): If True, tries to encapsulate the function in its own process. Defaults to True.
 
     Returns:
         Callable: The decorated function if arguments are provided, otherwise a partial function.
@@ -31,9 +36,8 @@ def metrit(*args: Any, verbose: bool = False, find_children: bool = False, isola
     Notes:
         - Processes spawned inside the decorated function won't be measured
         - This decorator also checks for recursion automatically even though is better to wrap the recursive function in another function and apply the @metrit decorator to the new function.
-        - Recursive functions shouldn't use the isolate argument since recursion cannot be measured.
         - Classes will be returned unmodified and will not be decorated.
-        - If the function is a methods won't be isolated.
+        - If the function is a method, it won't be isolated.
         - If isolate==True and it crashes in the process, it will be tried again in the main process.
 
 
@@ -62,14 +66,14 @@ def metrit(*args: Any, verbose: bool = False, find_children: bool = False, isola
         return partial(_decorator, verbose=verbose, find_children=find_children, isolate=isolate)
 
 
-def _decorator(func: Callable, verbose: bool = False, find_children: bool = False, isolate: bool = False) -> Callable:
+def _decorator(func: Callable, verbose: bool = False, find_children: bool = False, isolate: bool = True) -> Callable:
     """
     Decorator function that measures the memory and time of a given function.
     Args:
         func (Callable): The function to be decorated.
         verbose (bool, optional): If True, prints detailed information about the function execution. Defaults to False.
         find_children (bool, optional): If True, measures the memory and time of all child processes spawned by the function. Defaults to False.
-        isolate (bool, optional): If True, encapsulates the function in its own process. Defaults to False.
+        isolate (bool, optional): If True, encapsulates the function in its own process. Defaults to True.
 
     Returns:
         Callable: The decorated function.
@@ -80,19 +84,20 @@ def _decorator(func: Callable, verbose: bool = False, find_children: bool = Fals
         # If a class is found, return the class inmediatly since it could raise an exception if triggered from other processes
         return func
 
-    potential_recursion_func_stack: deque[Callable] = deque()
+    called_func_stack: deque[Callable] = deque()
 
     @wraps(func)
     def metrit_wrapper(*args: Tuple, **kwargs: Dict) -> Any:
-        nonlocal potential_recursion_func_stack
-        is_recursive: bool = check_is_recursive_func(func, potential_recursion_func_stack)
+        nonlocal called_func_stack
+        global called_isolated_func_queue
+
+        is_recursive: bool = check_is_recursive_func(func, called_func_stack, called_isolated_func_queue)
 
         callable_func, args, args_to_print, is_method = extract_callable_and_args_if_method(func, *args)
         if is_recursive:
-            return handle_recursive_call(callable_func, potential_recursion_func_stack, *args, **kwargs)
+            return handle_recursive_call(callable_func, called_func_stack, called_isolated_func_queue, *args, **kwargs)
 
         crashed: bool = False
-        # Get the memory footprint before the function is called
         if isolate and not is_method:
             try:
                 result, pool_monitor_data = isolate_function(find_children, callable_func, *args, **kwargs)
@@ -102,8 +107,11 @@ def _decorator(func: Callable, verbose: bool = False, find_children: bool = Fals
         if crashed or not isolate or is_method:
             result, pool_monitor_data = call_func(find_children, callable_func, *args, **kwargs)
 
-        potential_recursion_func_stack.pop()
-        if not potential_recursion_func_stack:
+        called_func_stack.pop()
+        if not called_isolated_func_queue.empty():
+            called_isolated_func_queue.get()  # Consume the queue
+
+        if not called_func_stack and called_isolated_func_queue.empty():
             pool_monitor_data.print(verbose, callable_func.__name__, args_to_print, kwargs)
 
         return result
@@ -111,13 +119,15 @@ def _decorator(func: Callable, verbose: bool = False, find_children: bool = Fals
     return metrit_wrapper
 
 
-def handle_recursive_call(func: Callable, potential_recursion_func_stack: deque, *args: Tuple, **kwargs: Dict) -> Any:
+def handle_recursive_call(
+    func: Callable, called_func_stack: deque, called_isolated_func_queue: Queue, *args: Tuple, **kwargs: Dict
+) -> Any:
     """
     Handle a recursive call by executing the given function with the provided arguments and keyword arguments.
 
     Parameters:
         func (Callable): The function to be executed.
-        potential_recursion_func_stack (deque): A stack of potential recursive functions.
+        called_func_stack (deque): A stack of potential recursive functions.
         *args: Variable length argument list.
         **kwargs: Arbitrary keyword arguments.
 
@@ -125,7 +135,10 @@ def handle_recursive_call(func: Callable, potential_recursion_func_stack: deque,
         Any: The result of executing the function.
     """
     result: Any = func(*args, **kwargs)
-    potential_recursion_func_stack.pop()
+
+    called_func_stack.pop()
+    if not called_isolated_func_queue.empty():
+        called_isolated_func_queue.get()  # Consume one element of the queue
     return result
 
 
@@ -181,11 +194,12 @@ def isolate_function(find_children: bool, func: Callable, *args: Tuple, **kwargs
         Exception: If an exception occurs during the execution of the function.
         This exception will be handled in the main process and try again the execution and measurement of the function in the main process.
     """
-    from multiprocess import Process, Queue
+    from multiprocess import Process  # type: ignore
 
     data_queue = Queue()
     result_queue = Queue()
     error_queue = Queue()
+
     try:
 
         func_process: Process = Process(
@@ -214,7 +228,13 @@ def isolate_function(find_children: bool, func: Callable, *args: Tuple, **kwargs
 
 
 def call_func_isolated(
-    find_children: bool, func: Callable, data_queue, result_queue, error_queue, args: Tuple, **kwargs: Dict
+    find_children: bool,
+    func: Callable,
+    data_queue: Queue,
+    result_queue: Queue,
+    error_queue: Queue,
+    args: Tuple,
+    **kwargs: Dict,
 ):
     """
     Executes the given function in a separate process and monitors its resource usage.
@@ -236,6 +256,8 @@ def call_func_isolated(
             The exception is put into the error_queue.
 
     """
+    global called_isolated_func_queue
+    called_isolated_func_queue.put(func)
     pre_monitor_data = Monitoring(find_children=find_children)
     pre_monitor_data.take_snapshot()
     pool_monitor_data = Monitoring(find_children=find_children)
@@ -245,6 +267,7 @@ def call_func_isolated(
         result: Any = func(*args, **kwargs)
     except Exception as e:
         pool_monitor_data.stop_monitoring()
+        called_isolated_func_queue.get()
         error_queue.put(e)
         return
 
