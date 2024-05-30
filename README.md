@@ -102,7 +102,7 @@ MetritConfig.ACTIVE = False  # Deactivates the decorator
 Using the decorator `@metrit` without any parameters executes the function once and displays the resources. However, you can enhance the experience using the following arguments:
 
 - `find_children` (bool, optional): Specifies if the monitoring system should look for children processes as well. Defaults to False.
-- `isolate` (bool, optional): Determines if the execution of the function is done in a separate process for more accurate results. See the [Isolate limitations](#isolate-limitations) for more details. Defaults to False.
+- `isolate` (bool, optional): Determines if the execution of the function is done in a separate process for more accurate results. See the [Isolate limitations](#isolate-limitations) for more details. Defaults to True.
 - `verbose` (bool, optional): Controls whether detailed information is printed after execution. Defaults to False.
 
 ## Best Practices
@@ -117,7 +117,7 @@ The ideal way to use this package is by applying the decorator to the functions 
 
 ## Recursive Functions
 
-Measuring the resources of recursive functions using decorators can be challenging due to potential verbosity in the output. This package offers an automatic recursion detection feature, but it is strongly recommended [encapsulating the recursive function](#encapsulating-the-recursive-function) within another function for cleaner, more precise, and safer results. Using recursive functions with `isolate = True` will not trigger the automatic recursion checker, making bad measurements, slowing time and making a too verbose output.
+Measuring the resources of recursive functions using decorators can be challenging due to potential verbosity in the output. This package offers an automatic recursion detection feature, but it is strongly recommended to [encapsulate the recursive function](#encapsulating-the-recursive-function) within another function for cleaner, more precise, and safer results. Using recursive functions with `isolate = True` is still in beta and could lead to inaccurate measurements.
 
 ### Using the Auto-Recursion Feature
 
@@ -128,14 +128,19 @@ This feature is intended for passive use in case the user forgets to encapsulate
 ```python
 @metrit
 def recursive_func(n):
-    if n == 0:
-        return 0
-    else:
-        return n + recursive_func(n - 1)
+    if n < 2:
+        return n
+    return recursive_func(n - 2) + recursive_func(n - 1)
 
 
 # This will trigger the auto-recursion feature
 result = recursive_func(3)
+```
+
+The result for this function could be something like:
+
+```text
+Function 'recursive_func'  50.86KB avg of memory    54.46% avg of CPU   4.22KB IO reads   5.63KB IO writes
 ```
 
 ### Encapsulating the Recursive Function
@@ -147,10 +152,9 @@ The recommended option is to encapsulate the recursive function within another f
 def encapsulated_recursive_function(n):
     """A non-verbose wrapper for the recursive function."""
     def recursive_func(n):
-        if n == 0:
-            return 0
-        else:
-            return n + recursive_func(n - 1)
+        if n < 2:
+            return n
+        return recursive_func(n - 2) + recursive_func(n - 1)
 
     return recursive_func(n)
 
@@ -158,7 +162,15 @@ def encapsulated_recursive_function(n):
 result = encapsulated_recursive_function(3)
 ```
 
-This approach enhances readability without incurring any performance penalties, even if `isolate = True`. However, it requires modifying your code to measure this type of function.
+This approach enhances speed and measurement precision without incurring any performance penalties, even if `isolate = True`. However, it requires modifying your code to measure this type of function.
+
+The result for this function could be something like:
+
+```text
+Function 'encapsulated_recursive_function'  40.00KB avg of memory     0.00% avg of CPU     238B IO reads   2.01KB IO writes
+```
+
+Both examples are valid for comparisons between similar circumstances, but the latter is preferred.
 
 ## Isolate
 
@@ -172,8 +184,8 @@ While this package generally delivers excellent performance and reliability, it'
 
 While the `isolate` feature is powerful and recommended for precise measurements, it can lead to unexpected results. Here are the main limitations:
 
-- Using it in a non-wrapped recursive function will generate a process for each recursive call, wasting resources, performing inaccurate measurements, and generating verbose output. Ensure you are not using it directly with a recursive function.
-- Methods are not affected by the `isolate` parameter and will be executed as if it were `False`. This is because encapsulating a method in a separate process from its object can lead to issues. When methods are called, they rely on the state of the object they belong to. Isolating a method would require serializing (pickling) the entire object state and then deserializing it in a new process. This process can be complex and error-prone, leading to potential errors and inconsistencies. Therefore, to avoid these issues, `metrit` does not apply the isolate parameter to methods, ensuring they run in the same process as their object.
+- Using it in a non-wrapped recursive function will generate one process for the parent call and use multiprocess queues to pass the call stack. Isolating non-wrapped recursive functions is still in beta and could lead to inaccurate measurements and other possible issues. If any issues arise using this approach, feel free to open a GitHub issue.
+- Methods are not affected by the `isolate` parameter and will be executed as if it were `False`. This is because encapsulating a method in a separate process from its object can lead to several issues. When methods are called, they rely on the state of the object they belong to. Isolating a method would require serializing (pickling) the entire object state and then deserializing it in a new process. This process can be complex and error-prone, leading to potential errors and inconsistencies. Therefore, to avoid these issues, `metrit` does not apply the isolate parameter to methods, ensuring they run in the same process as their object.
 
 ### Why is Class Decoration Bypassed?
 
@@ -201,7 +213,6 @@ If an error occurs while executing the decorated function in non-isolated mode o
 ### Warnings
 
 - Deprecation warnings will be added before removing a feature.
-- If recursion is detected, a warning will be prompted. In such cases, refer to the [Recursive functions](#recursive-functions) section.
 
 ## Contributing
 

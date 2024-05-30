@@ -1,6 +1,7 @@
 from collections import deque
 from typing import Callable, Tuple
-from warnings import warn
+
+from multiprocess import Queue  # type: ignore
 
 
 def format_size(bytes_size: int | float) -> str:
@@ -45,23 +46,36 @@ def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[C
     return callable_func, args, args_to_print, is_method
 
 
-def check_is_recursive_func(func: Callable, potential_recursion_func_stack: deque[Callable]) -> bool:
+def check_is_recursive_func(
+    func: Callable, called_func_stack: deque[Callable], called_isolated_func_queue: Queue
+) -> bool:
     """
     Checks if the function is being called recursively by checking the stack of called functions.
     It will send a warning if the function is being called recursively.
     Args:
         func (Callable): The function to check for recursion.
-        potential_recursion_func_stack (deque[Callable]): A stack of potential recursive functions.
+        called_func_stack (deque[Callable]): A stack of potential recursive functions.
     Returns:
         bool: True if the function is being called recursively, False otherwise.
 
     """
+    is_recursive = False
+    if not called_isolated_func_queue.empty():
 
-    if potential_recursion_func_stack and potential_recursion_func_stack[-1] == func:
-        potential_recursion_func_stack.append(func)
-        # Check if the function is being called recursively by checking the object identity. This is way faster than using getFrameInfo
-        warning_msg = "Recursive function detected. This process may be slow. Consider wrapping the recursive function in another function and applying the @metrit decorator to the new function."
-        warn(warning_msg, stacklevel=3)
-        return True
-    potential_recursion_func_stack.append(func)
-    return False
+        prev_func = called_isolated_func_queue.get()
+        called_isolated_func_queue.put(prev_func)
+        if (
+            (prev_func.__name__ == func.__name__)
+            and (prev_func.__module__ == func.__module__)  # noqa: W503
+            and (prev_func.__code__.co_code == func.__code__.co_code)  # noqa: W503
+        ):
+            is_recursive = True
+
+    if called_func_stack and called_func_stack[-1] == func:
+        if is_recursive:
+            # This means that it is recursive and it has been called from another process (isolate) so we need to append the same function again
+            called_func_stack.append(func)
+        is_recursive = True
+
+    called_func_stack.append(func)
+    return is_recursive

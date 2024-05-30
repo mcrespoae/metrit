@@ -60,7 +60,7 @@ def cpu_intensive(a: int = 1, b: int = 2) -> int:
     return a + b
 
 
-@metrit
+@metrit(isolate=True)
 def recursive_func(n):
     if n < 2:
         return n
@@ -92,8 +92,9 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     return num_writes + data_size
 
 
-@metrit(verbose=True, find_children=True, isolate=True)
+# @metrit(verbose=True, find_children=True, isolate=True)
 def main():
+    """
     print("---CLASS EXAMPLES---")
     test_class_args = MeasureTestClassWithArgs(3, b=6)
     if test_class_args.sum != 9:
@@ -118,9 +119,12 @@ def main():
     print("---END CLASS EXAMPLES---\n")
 
     print("---RECURSIVE EXAMPLES---")
+    """
     wrapped_recursive_func(21)
-    recursive_func(12)
 
+    recursive_func(21)
+    recursive_func(21)
+    """
     print("---END RECURSIVE EXAMPLES---\n")
 
     print("---OTHER EXAMPLES---")
@@ -130,6 +134,7 @@ def main():
 
     simulate_writes_and_reads(5_000, data_size=1024)  # 5MB
     print("---END OTHER EXAMPLES---\n")
+    """
 
 
 if __name__ == "__main__":
