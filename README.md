@@ -6,7 +6,7 @@
 
 ## Overview
 
-`metrit` is a Python package designed to simplify the process of measuring the execution resources of your functions through a straightforward decorator.
+`metrit` is a Python package designed to simplify the process of measuring the execution resources of your functions through a straightforward decorator. `metrit` decorator is a powerful tool for detailed performance analysis of Python functions, offering insights into resource utilization and potential bottlenecks. Its robust handling of process isolation and monitoring ensures accurate measurements, even for complex functions that involve multiple processes.
 
 ## Installation
 
@@ -213,6 +213,42 @@ If an error occurs while executing the decorated function in non-isolated mode o
 ### Warnings
 
 - Deprecation warnings will be added before removing a feature.
+
+## How metrit works
+
+Here's a detailed explanation of how `metrit` operates:
+
+1. Function Process Execution:
+
+    - The decorated function is initially executed in a separate process if `isolate = True`, referred to as the function process.
+    - If this process crashes, the function will be executed in the main process.
+
+2. Monitor Process Setup:
+
+    - Before starting the function process, another process, called the monitor process, is created to monitor the resources of the function process.
+    - The monitor process takes an initial snapshot of the resources in the function process to use as a baseline.
+
+3. Resource Monitoring:
+
+    - The monitor process continuously checks the resources of the function process, starting with an interval of 0.1 seconds, which can scale up to 5 seconds for longer-running functions.
+    - This adaptive refresh rate minimizes the monitoring overhead for time-consuming functions.
+
+4. Completion and Data Collection:
+
+    - Upon the function process completion, a signal is sent to the monitor process to stop monitoring.
+    - The data collected by the monitor process is adjusted by subtracting the initial snapshot to ensure precision.
+    - The final values are then printed.
+
+5. Handling Failures and Parameters:
+
+    - If the function process fails, or if the `isolate` parameter is set to `False`, the function will execute in the main process while the monitor process continues its monitoring.
+    - The recursion checker for isolated functions uses queues to communicate the function call stack.
+    - Methods are not isolated and will always run in the main process, as if `isolate` is `False`.
+
+6. Child Process Monitoring:
+
+    - When `find_children` is set to `True`, the library measures all processes spawned by the function process.
+    - This feature is useful for nested functions or functions that spawn additional processes.
 
 ## Contributing
 

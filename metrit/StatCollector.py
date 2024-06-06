@@ -63,8 +63,6 @@ class StatCollector:
                         stats[child.pid].rss_bytes.append(rss_bytes)
                         stats[child.pid].vms_bytes.append(vms_bytes)
                     except Exception:
-                        if child.pid in stats:
-                            del stats[child.pid]
                         continue  # It is possible for some children processes to not exist, so we skip them
 
             sucesss_queue.put(True)
@@ -150,8 +148,14 @@ class StatCollector:
                         stats[child.pid].io_read_bytes = io_read_bytes
                         stats[child.pid].io_write_bytes = io_write_bytes
                     except Exception:
-                        if child.pid in stats:
-                            del stats[child.pid]
+                        if child.pid in stats and (
+                            stats[child.pid].io_read_count != 0
+                            and stats[child.pid].io_write_count != 0  # noqa: W503
+                            and stats[child.pid].io_read_bytes != 0  # noqa: W503
+                            and stats[child.pid].io_write_bytes != 0  # noqa: W503
+                        ):
+                            continue  # This continue is to make the code more clear, but the whole condition could be removed
+
                         continue  # It is possible for some children processes to not exist, so we skip them
 
             sucesss_queue.put(True)

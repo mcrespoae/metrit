@@ -157,6 +157,9 @@ class Monitoring:
             stats = self.stat_collector.collect_cpu_ram_stats(
                 stats, self.find_children, refresh_rate, self.success_queue
             )
+
+            # This call will help if find children = True and some of them die before the STOP signal is received so IO counters for dead processes will not be collected.
+            stats = self.stat_collector.collect_io_counters(stats, self.find_children, self.success_queue)
             if not self.stop_queue.empty():
                 message = self.stop_queue.get()
                 if message == "STOP":

@@ -60,7 +60,7 @@ def cpu_intensive(a: int = 1, b: int = 2) -> int:
     return a + b
 
 
-@metrit(isolate=True)
+@metrit
 def recursive_func(n):
     if n < 2:
         return n
@@ -92,7 +92,7 @@ def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     return num_writes + data_size
 
 
-# @metrit(verbose=True, find_children=True, isolate=True)
+@metrit(verbose=True, find_children=True, isolate=True)
 def main():
 
     print("---CLASS EXAMPLES---")
