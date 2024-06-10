@@ -4,9 +4,11 @@
 ![PyPI](https://img.shields.io/pypi/v/metrit?label=pypi%20package)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/metrit)
 
+`metrit` is a Python package designed to simplify the process of measuring the execution resources of your functions through a straightforward decorator.
+
 ## Overview
 
-`metrit` is a Python package designed to simplify the process of measuring the execution resources of your functions through a straightforward decorator. `metrit` decorator is a powerful tool for detailed performance analysis of Python functions, offering insights into resource utilization and potential bottlenecks. Its robust handling of process isolation and monitoring ensures accurate measurements, even for complex functions that involve multiple processes.
+`metrit` decorator is a powerful tool for detailed performance analysis of Python functions, offering insights into resource utilization and potential bottlenecks. Its robust handling of process isolation and monitoring ensures accurate measurements, even for complex functions that involve multiple processes.
 
 ## Installation
 
