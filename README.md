@@ -8,7 +8,7 @@
 
 ## Overview
 
-`metrit` decorator is a powerful tool to accurately measure RAM, CPU, and I/O operations in Python functions, offering insights into resource utilization and potential bottlenecks. With automatic recursion detection and robust handling of process isolation and monitoring, metrit ensures accurate measurements, even for complex functions that involve multiple processes.
+The `metrit` decorator is a powerful tool for accurately measuring the execution resources of Python functions, including RAM, CPU, and I/O operations. It provides insights into resource utilization and potential bottlenecks. With features like automatic recursion detection and robust handling of process isolation and monitoring, `metrit` ensures precise measurements even for complex functions involving multiple processes.
 
 ## Installation
 
