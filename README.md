@@ -2,7 +2,6 @@
 # metrit
 
 ![PyPI](https://img.shields.io/pypi/v/metrit?label=pypi%20package)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/metrit)
 
 `metrit` is a Python package designed to simplify the process of measuring the execution resources of your functions through a straightforward decorator.
 
