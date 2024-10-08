@@ -8,12 +8,12 @@ dynamic = ["version"]
 description = "A dead simple resources monitoring decorator"
 authors = [{name = "Mario Crespo", email = "info@mariocrespo.es"}]
 readme = "README.md"
-dependencies = ["psutil==6.0.0", "multiprocess==0.70.16"]
+dependencies = ["psutil==6.0.0", "multiprocess==0.70.17"]
 requires-python = ">= 3.8"
 
 license = {file = "LICENSE"}
 classifiers = [
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 3 - Beta",
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
