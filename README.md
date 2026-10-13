@@ -221,28 +221,28 @@ Here's a detailed explanation of how `metrit` operates:
 
 1. Function Process Execution:
 
-    - The decorated function is initially executed in a separate process if `isolate = True`, referred to as the function process.
-    - If this process crashes, the function will be executed in the main process.
+    - If `isolate = True`, the decorated function runs in a separate process, referred to as the function process; otherwise it runs in the main process.
+    - The process that is being measured is called the target process (the function process when isolated, otherwise the main process).
 
-2. Monitor Process Setup:
+2. Baseline Snapshot:
 
-    - Before starting the function process, another process, called the monitor process, is created to monitor the resources of the function process.
-    - The monitor process takes an initial snapshot of the resources in the function process to use as a baseline.
+    - Before the function runs, a short-lived helper process records a snapshot of the target process' current resources to use as a baseline.
 
 3. Resource Monitoring:
 
-    - The monitor process continuously checks the resources of the function process, starting with an interval of 0.1 seconds, which can scale up to 5 seconds for longer-running functions.
+    - A pooling helper process (spawned as a child of the target process) continuously samples its resources, starting with an interval of 0.1 seconds that scales up to 5 seconds for longer-running functions.
+    - The helper process excludes itself from the samples, so the monitoring overhead is not counted.
     - This adaptive refresh rate minimizes the monitoring overhead for time-consuming functions.
 
 4. Completion and Data Collection:
 
-    - Upon the function process completion, a signal is sent to the monitor process to stop monitoring.
-    - The data collected by the monitor process is adjusted by subtracting the initial snapshot to ensure precision.
+    - Upon completion, a signal stops the pooling process.
+    - The pooled data is adjusted by subtracting the baseline snapshot to improve precision.
     - The final values are then printed.
 
 5. Handling Failures and Parameters:
 
-    - If the function process fails, or if the `isolate` parameter is set to `False`, the function will execute in the main process while the monitor process continues its monitoring.
+    - If the isolated process crashes (not a user exception), or if `isolate = False`, the function is executed in the main process with a fresh monitoring round. User exceptions are propagated as-is and the function is not re-executed.
     - The recursion checker tracks, per function and per thread, whether the same function is already executing (the isolated process seeds this state before running the function).
     - Methods are not isolated and will always run in the main process, as if `isolate` is `False`.
 

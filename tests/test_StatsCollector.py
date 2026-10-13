@@ -1,4 +1,8 @@
 import unittest
+from sys import platform
+from unittest import mock
+
+from multiprocess import current_process  # type: ignore
 
 from metrit.StatCollector import RawStats, StatCollector, Stats
 
@@ -282,6 +286,83 @@ class TestStatCollector(unittest.TestCase):
         )
         result = self.stat_collector.get_final_stats(stats)
         self.assertEqual(result, expected)
+
+
+class _FakeChild:
+    def __init__(self, pid):
+        self.pid = pid
+
+
+class _FakeProcess:
+    def __init__(self, children=None):
+        self._children = children or []
+
+    def children(self, recursive=False):  # noqa: ARG002
+        return self._children
+
+
+class TestFailedSamplesAreSkipped(unittest.TestCase):
+    def setUp(self):
+        self.stat_collector = StatCollector(1234)
+
+    def test_get_current_stats_returns_none_on_error(self):
+        with mock.patch("metrit.StatCollector.psutil.Process", side_effect=Exception("gone")):
+            self.assertIsNone(self.stat_collector.get_current_stats(1234, 0.0))
+
+    def test_get_io_counters_returns_none_on_error(self):
+        with mock.patch("metrit.StatCollector.psutil.Process", side_effect=Exception("gone")):
+            self.assertIsNone(self.stat_collector.get_io_counters(1234))
+
+    def test_collect_cpu_ram_skips_failed_samples(self):
+        success_queue = mock.MagicMock()
+        stats = {}
+        with mock.patch.object(StatCollector, "get_current_stats", return_value=None):
+            result = self.stat_collector.collect_cpu_ram_stats(stats, False, 0.0, success_queue)
+
+        self.assertEqual(result, {})
+        success_queue.put.assert_called_with(True)
+
+    def test_collect_io_does_not_overwrite_with_none(self):
+        if platform == "darwin":
+            self.skipTest("IO counters are not supported on macOS")
+
+        success_queue = mock.MagicMock()
+        existing = RawStats(io_read_count=7, io_write_count=8, io_read_bytes=9, io_write_bytes=10)
+        stats = {1234: existing}
+
+        with mock.patch.object(StatCollector, "get_io_counters", return_value=None):
+            result = self.stat_collector.collect_io_counters(stats, False, success_queue)
+
+        self.assertIs(result[1234], existing)
+        self.assertEqual(result[1234].io_read_count, 7)
+        self.assertEqual(result[1234].io_write_bytes, 10)
+
+
+class TestMonitorProcessExcluded(unittest.TestCase):
+    def setUp(self):
+        self.stat_collector = StatCollector(1234)
+
+    def test_monitoring_process_is_not_counted(self):
+        current_pid = current_process().pid  # type: ignore
+        children = [_FakeChild(current_pid), _FakeChild(9999)]
+        success_queue = mock.MagicMock()
+        stats = {}
+
+        def fake_process(pid):
+            return _FakeProcess(children) if pid == 1234 else _FakeProcess([])
+
+        def fake_stats(pid, refresh_rate):  # noqa: ARG001
+            return (1.0, 2.0, 3, 4)
+
+        with mock.patch("metrit.StatCollector.psutil.Process", side_effect=fake_process), mock.patch.object(
+            StatCollector, "get_current_stats", side_effect=fake_stats
+        ):
+            result = self.stat_collector.collect_cpu_ram_stats(stats, True, 0.0, success_queue)
+
+        self.assertIn(1234, result)
+        self.assertIn(9999, result)
+        self.assertNotIn(current_pid, result)
+        self.assertEqual(result[9999].rss_bytes, [3])
 
 
 if __name__ == "__main__":

@@ -40,22 +40,25 @@ class StatCollector:
         """
         # Collect current CPU and RAM stats for the process and its children
         try:
-            cpu_percent, memory_percent, rss_bytes, vms_bytes = self.get_current_stats(self.pid, refresh_rate)
-            if self.pid not in stats:
-                stats[self.pid] = RawStats()
-            stats[self.pid].cpu_percent.append(cpu_percent)
-            stats[self.pid].memory_percent.append(memory_percent)
-            stats[self.pid].rss_bytes.append(rss_bytes)
-            stats[self.pid].vms_bytes.append(vms_bytes)
+            current = self.get_current_stats(self.pid, refresh_rate)
+            if current is not None:
+                cpu_percent, memory_percent, rss_bytes, vms_bytes = current
+                if self.pid not in stats:
+                    stats[self.pid] = RawStats()
+                stats[self.pid].cpu_percent.append(cpu_percent)
+                stats[self.pid].memory_percent.append(memory_percent)
+                stats[self.pid].rss_bytes.append(rss_bytes)
+                stats[self.pid].vms_bytes.append(vms_bytes)
             if find_children:
 
                 for child in psutil.Process(self.pid).children(recursive=True):
                     try:
-                        if child.pid == current_process().pid:  # Avoid counting the current process
+                        if child.pid == current_process().pid:  # Avoid counting the monitoring process
                             continue
-                        cpu_percent, memory_percent, rss_bytes, vms_bytes = self.get_current_stats(
-                            child.pid, refresh_rate
-                        )
+                        child_current = self.get_current_stats(child.pid, refresh_rate)
+                        if child_current is None:
+                            continue  # Child vanished before it could be sampled, skip it
+                        cpu_percent, memory_percent, rss_bytes, vms_bytes = child_current
                         if child.pid not in stats:
                             stats[child.pid] = RawStats()
                         stats[child.pid].cpu_percent.append(cpu_percent)
@@ -73,7 +76,7 @@ class StatCollector:
             return stats
 
     @staticmethod
-    def get_current_stats(pid: int, refresh_rate: float) -> Tuple[float, float, int, int]:
+    def get_current_stats(pid: int, refresh_rate: float) -> Tuple[float, float, int, int] | None:
         """
         Get the current CPU and memory usage statistics for a given process ID (PID).
 
@@ -82,12 +85,15 @@ class StatCollector:
             refresh_rate (float): The interval (in seconds) to refresh the CPU usage.
 
         Returns:
-            Tuple[float, float, int, int]: A tuple containing the CPU percentage, memory percentage, RSS (resident set size) in bytes, and VMS (virtual memory size) in bytes.
+            Tuple[float, float, int, int] | None: A tuple containing the CPU percentage, memory
+            percentage, RSS (resident set size) in bytes, and VMS (virtual memory size) in bytes.
+            Returns None when the stats cannot be retrieved (e.g. the process is gone).
 
          Note:
             - The CPU percentage is calculated using `psutil.Process.cpu_percent()` with the given `refresh_rate`.
             - The memory information is obtained using `psutil.Process.as_dict()` with the attributes "memory_info" and "memory_percent".
-            - If there is an error getting the stats, the function returns 0.0 for CPU and memory percentages, and 0 for RSS and VMS.
+            - Failed samples return None so callers can skip them instead of appending zeros,
+              which would bias the averages downward and hide collection errors.
         """
         # Use psutil to get the stats for a given PID
         try:
@@ -98,8 +104,7 @@ class StatCollector:
             rss_bytes = memory_info["memory_info"].rss
             vms_bytes = memory_info["memory_info"].vms
         except Exception:
-            # print(f"Error getting cpu and ram stats for PID {pid}. {e}")
-            return 0.0, 0.0, 0, 0
+            return None
         return cpu_percent, memory_percent, rss_bytes, vms_bytes
 
     def collect_io_counters(self, stats, find_children: bool, sucesss_queue: Queue) -> Dict[int, RawStats]:
@@ -127,36 +132,32 @@ class StatCollector:
             return stats
         # Collect IO stats for the process and its children
         try:
-            io_read_count, io_write_count, io_read_bytes, io_write_bytes = self.get_io_counters(self.pid)
-            if self.pid not in stats:
-                stats[self.pid] = RawStats()
-            stats[self.pid].io_read_count = io_read_count
-            stats[self.pid].io_write_count = io_write_count
-            stats[self.pid].io_read_bytes = io_read_bytes
-            stats[self.pid].io_write_bytes = io_write_bytes
+            counters = self.get_io_counters(self.pid)
+            if counters is not None:
+                if self.pid not in stats:
+                    stats[self.pid] = RawStats()
+                (
+                    stats[self.pid].io_read_count,
+                    stats[self.pid].io_write_count,
+                    stats[self.pid].io_read_bytes,
+                    stats[self.pid].io_write_bytes,
+                ) = counters
 
             if find_children:
                 for child in psutil.Process(self.pid).children(recursive=True):
-                    try:
-                        if child.pid == current_process().pid:  # Avoid counting the current process
-                            continue
-                        io_read_count, io_write_count, io_read_bytes, io_write_bytes = self.get_io_counters(child.pid)
-                        if child.pid not in stats:
-                            stats[child.pid] = RawStats()
-                        stats[child.pid].io_read_count = io_read_count
-                        stats[child.pid].io_write_count = io_write_count
-                        stats[child.pid].io_read_bytes = io_read_bytes
-                        stats[child.pid].io_write_bytes = io_write_bytes
-                    except Exception:
-                        if child.pid in stats and (
-                            stats[child.pid].io_read_count != 0
-                            and stats[child.pid].io_write_count != 0  # noqa: W503
-                            and stats[child.pid].io_read_bytes != 0  # noqa: W503
-                            and stats[child.pid].io_write_bytes != 0  # noqa: W503
-                        ):
-                            continue  # This continue is to make the code more clear, but the whole condition could be removed
-
-                        continue  # It is possible for some children processes to not exist, so we skip them
+                    if child.pid == current_process().pid:  # Avoid counting the monitoring process
+                        continue
+                    child_counters = self.get_io_counters(child.pid)
+                    if child_counters is None:
+                        continue  # Child vanished before its counters could be read, skip it
+                    if child.pid not in stats:
+                        stats[child.pid] = RawStats()
+                    (
+                        stats[child.pid].io_read_count,
+                        stats[child.pid].io_write_count,
+                        stats[child.pid].io_read_bytes,
+                        stats[child.pid].io_write_bytes,
+                    ) = child_counters
 
             sucesss_queue.put(True)
         except Exception as e:
@@ -166,7 +167,7 @@ class StatCollector:
             return stats
 
     @staticmethod
-    def get_io_counters(pid: int) -> Tuple[int, int, int, int]:
+    def get_io_counters(pid: int) -> Tuple[int, int, int, int] | None:
         """
         Get the IO counters for a given process ID.
 
@@ -174,17 +175,16 @@ class StatCollector:
             pid (int): The process ID of the process to get the IO counters for.
 
         Returns:
-            Tuple[int, int, int, int]: A tuple containing the read count, write count, read bytes, and write bytes of the process's IO counters.
-
-        Note:
-            If there is an error getting the stats for the process ID, the function returns 0 for all counters.
+            Tuple[int, int, int, int] | None: A tuple containing the read count, write count, read
+            bytes, and write bytes of the process's IO counters, or None if they cannot be read
+            (e.g. the process is gone). Returning None lets callers avoid overwriting previously
+            collected counters with zeros.
         """
         try:
             p = psutil.Process(pid)
+            io_counters = p.io_counters()  # type: ignore
         except Exception:
-            print(f"Error getting stats for PID {pid}")
-            return 0, 0, 0, 0
-        io_counters = p.io_counters()  # type: ignore
+            return None
         return io_counters.read_count, io_counters.write_count, io_counters.read_bytes, io_counters.write_bytes
 
     def calculate_statistics_from_data(self, raw_stats: Dict[int, RawStats]) -> Dict[int, Stats]:
