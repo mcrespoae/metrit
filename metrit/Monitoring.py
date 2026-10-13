@@ -2,11 +2,20 @@ import time
 from sys import platform
 from typing import Dict, Self
 
+import psutil
 from multiprocess import Process, Queue, current_process  # type: ignore
 
 from .StatCollector import StatCollector
 from .Stats import RawStats, Stats
 from .utils import format_size
+
+# Safety nets so a crashed helper process can never hang the caller.
+# The snapshot is a quick one-off collection, so it should never take this long.
+_SNAPSHOT_JOIN_TIMEOUT: float = 30.0
+# After the STOP signal the pooler should exit within one refresh cycle (<=5s).
+_POOL_JOIN_TIMEOUT: float = 10.0
+# Maximum time to wait for data once the producing process has already stopped.
+_QUEUE_GET_TIMEOUT: float = 5.0
 
 
 class Monitoring:
@@ -52,15 +61,25 @@ class Monitoring:
         self.pre_data_queue = Queue()
 
         # Take a snapshot of RAM and IO stats for the process and its children
+        raw_snapshot_stats: Dict[int, RawStats] = {}
         try:
             take_snapshot_process: Process = Process(target=self.collect_snapshot_stats, args=())
             take_snapshot_process.start()
-            take_snapshot_process.join()  # Ensure process termination
+            take_snapshot_process.join(_SNAPSHOT_JOIN_TIMEOUT)  # Ensure process termination
+            if take_snapshot_process.is_alive():
+                print("Process snapshot took too long, terminating it")
+                take_snapshot_process.terminate()
+                take_snapshot_process.join(_POOL_JOIN_TIMEOUT)
+
             has_process_crashed: bool = self.has_process_crashed(self.pre_success_queue)
             if has_process_crashed:
                 print("Process snapshot has crashed")
-                take_snapshot_process.terminate()
-            raw_snapshot_stats: Dict[int, RawStats] = self.pre_data_queue.get()
+
+            # Only read when the snapshot actually produced data, otherwise a timed
+            # out get() would block the caller (the crashed branch still needs to
+            # fall through to the empty-dict default).
+            if not has_process_crashed:
+                raw_snapshot_stats = self.pre_data_queue.get(timeout=_QUEUE_GET_TIMEOUT)
 
         except Exception:
             raw_snapshot_stats = {}  # Avoid hanging the process if something goes wrong
@@ -120,13 +139,21 @@ class Monitoring:
         """
         # Send a signal to stop the pooling process
         self.stop_queue.put("STOP")
-        self.pooling_process.join()  # type: ignore
+        self.pooling_process.join(_POOL_JOIN_TIMEOUT)  # type: ignore
+        if self.pooling_process.is_alive():  # type: ignore
+            print("Process pooling did not stop in time, terminating it")
+            self.pooling_process.terminate()  # type: ignore
+            self.pooling_process.join(_POOL_JOIN_TIMEOUT)  # type: ignore
+
         has_process_crashed = self.has_process_crashed(self.success_queue)
         if has_process_crashed:
             print("Process pooling has crashed")
-            self.pooling_process.terminate()  # type: ignore
 
-        pooling_raw_stats: Dict[int, RawStats] = self.data_pool_queue.get()
+        # Never block forever: if the pooler crashed it may not have produced data.
+        try:
+            pooling_raw_stats: Dict[int, RawStats] = self.data_pool_queue.get(timeout=_QUEUE_GET_TIMEOUT)
+        except Exception:
+            pooling_raw_stats = {}
 
         self.stats_per_pid = self.stat_collector.calculate_statistics_from_data(pooling_raw_stats)
 
@@ -153,6 +180,11 @@ class Monitoring:
         stats: Dict[int, RawStats] = {}
 
         while True:
+
+            # If the monitored process died without a STOP signal (hard crash), stop
+            # pooling instead of lingering forever as an orphaned process.
+            if not psutil.pid_exists(self.pid):
+                break
 
             stats = self.stat_collector.collect_cpu_ram_stats(
                 stats, self.find_children, refresh_rate, self.success_queue
