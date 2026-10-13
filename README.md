@@ -118,11 +118,11 @@ The ideal way to use this package is by applying the decorator to the functions 
 
 ## Recursive Functions
 
-Measuring the resources of recursive functions using decorators can be challenging due to potential verbosity in the output. This package offers an automatic recursion detection feature, but it is strongly recommended to [encapsulate the recursive function](#encapsulating-the-recursive-function) within another function for cleaner, more precise, and safer results. Using recursive functions with `isolate = True` is still in beta and could lead to inaccurate measurements.
+Measuring the resources of recursive functions using decorators can be challenging due to potential verbosity in the output. This package offers an automatic recursion detection feature, but it is still strongly recommended to [encapsulate the recursive function](#encapsulating-the-recursive-function) within another function for cleaner, more precise, and safer results. Recursive functions are supported with both `isolate = True` and `isolate = False`: recursion is detected per function and per thread, and isolated recursion reuses a single process instead of spawning one per recursion level.
 
 ### Using the Auto-Recursion Feature
 
-The auto-recursion feature detects recursion in the decorated function by checking the parent call function. If recursion is found, it will only output the measures taken to run the appropriate function, plus a small overhead. It is not recommended to rely on this feature intentionally since the collected data might not be as accurate.
+The auto-recursion feature detects recursion in the decorated function by tracking whether the same function is already executing on the current thread (including inside an isolated process). If recursion is found, it will only output the measures taken to run the outermost call, plus a small overhead. It is not recommended to rely on this feature intentionally since the collected data might not be as accurate.
 
 This feature is intended for passive use in case the user forgets to encapsulate the recursive function or for non-accurate comparisons.
 
@@ -185,7 +185,7 @@ While this package generally delivers excellent performance and reliability, it'
 
 While the `isolate` feature is powerful and recommended for precise measurements, it can lead to unexpected results. Here are the main limitations:
 
-- Using it in a non-wrapped recursive function will generate one process for the parent call and use multiprocess queues to pass the call stack. Isolating non-wrapped recursive functions is still in beta and could lead to inaccurate measurements and other possible issues. If any issues arise using this approach, feel free to open a GitHub issue.
+- Using it in a non-wrapped recursive function will run the outermost call in an isolated process while the nested calls reuse that same process. Isolated recursion is supported, but measurements can still be less accurate than wrapping the recursive function explicitly. If any issues arise using this approach, feel free to open a GitHub issue.
 - Methods are not affected by the `isolate` parameter and will be executed as if it were `False`. This is because encapsulating a method in a separate process from its object can lead to several issues. When methods are called, they rely on the state of the object they belong to. Isolating a method would require serializing (pickling) the entire object state and then deserializing it in a new process. This process can be complex and error-prone, leading to potential errors and inconsistencies. Therefore, to avoid these issues, `metrit` does not apply the isolate parameter to methods, ensuring they run in the same process as their object.
 
 ### Why is Class Decoration Bypassed?
@@ -243,7 +243,7 @@ Here's a detailed explanation of how `metrit` operates:
 5. Handling Failures and Parameters:
 
     - If the function process fails, or if the `isolate` parameter is set to `False`, the function will execute in the main process while the monitor process continues its monitoring.
-    - The recursion checker for isolated functions uses queues to communicate the function call stack.
+    - The recursion checker tracks, per function and per thread, whether the same function is already executing (the isolated process seeds this state before running the function).
     - Methods are not isolated and will always run in the main process, as if `isolate` is `False`.
 
 6. Child Process Monitoring:
