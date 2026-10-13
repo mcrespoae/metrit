@@ -256,7 +256,7 @@ Here's a detailed explanation of how `metrit` operates:
 Contributions are welcome! Please follow these guidelines when contributing:
 
 1. Fork the repository.
-2. Use `make install` to install all dependencies.
+2. Install [uv](https://docs.astral.sh/uv/) and run `make install` to install all dependencies.
 3. Create a new branch for your changes.
 4. Implement your changes and commit them.
 5. Push your changes to your forked repository.
