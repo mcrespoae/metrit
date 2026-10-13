@@ -6,10 +6,28 @@ name: Python push to main - Run test and lint
 on:
   push:
     branches: [ "main" ]
-    paths: metrit/**.py
+    # Run for every change that can affect the build. Previously only `metrit/**.py`
+    # was listed, so test- or config-only changes silently skipped CI.
+    paths:
+      - "metrit/**"
+      - "tests/**"
+      - "examples/**"
+      - ".github/workflows/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Makefile"
+      - ".flake8"
   pull_request:
     branches: [ "main" ]
-    paths: metrit/**.py
+    paths:
+      - "metrit/**"
+      - "tests/**"
+      - "examples/**"
+      - ".github/workflows/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Makefile"
+      - ".flake8"
 
 jobs:
     build:

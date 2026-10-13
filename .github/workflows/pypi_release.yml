@@ -2,8 +2,10 @@ name: Publish Python distributions to PyPI
 
 on:
   push:
+    # Only version tags (e.g. "0.1.6") release. Using '*' would publish on any
+    # tag, including accidental/scratch ones.
     tags:
-      - '*'
+      - '[0-9]*.[0-9]*.[0-9]*'
 
 jobs:
   build:
