@@ -53,10 +53,10 @@ def fill_ram(size_in_mb, duration_in_seconds):
 
 @metrit()
 def cpu_intensive(a: int = 1, b: int = 2) -> int:
-    # Simulate some work
-    for _ in range(10):
-        for _ in range(10_000_000):
-            pass  #
+    # Simulate some work (kept small so the example runs quickly)
+    for _ in range(5):
+        for _ in range(1_000_000):
+            pass
     return a + b
 
 

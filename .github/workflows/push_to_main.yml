@@ -32,12 +32,10 @@ jobs:
           run: uv sync --dev
 
         - name: flake8 Lint
-          run: >
-            uv run flake8
-            --max-line-length=350
-            --extend-ignore=F401,E402,E302,E305,E265,E701,F824
-            --extend-exclude=.venv,examples/examples.py
-            .
+          run: uv run flake8
+
+        - name: basedpyright Type Check
+          run: uv run basedpyright
 
         - name: Run unittests
           run: uv run python -m unittest discover -v -s ./tests -p "*test*.py"

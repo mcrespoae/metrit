@@ -7,7 +7,7 @@ else
 	RMDIR = rm -rf
 endif
 
-.PHONY: install build example test clean upload_pypi upload-testpypi
+.PHONY: install build example test lint typecheck check clean upload_pypi upload-testpypi
 
 install:
 	$(info Installing the repo)
@@ -18,6 +18,14 @@ example:
 
 test:
 	uv run python -m unittest discover -v -s ./tests -p "*test*.py"
+
+lint:
+	uv run flake8
+
+typecheck:
+	uv run basedpyright
+
+check: lint typecheck
 
 clean:
 ifeq ($(OS),Windows_NT)

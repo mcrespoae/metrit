@@ -1,4 +1,5 @@
 import inspect
+import logging
 import traceback
 from functools import partial, wraps
 from typing import Any, Callable, Dict, Tuple
@@ -7,6 +8,8 @@ from multiprocess import Queue  # type: ignore
 
 from metrit.Monitoring import Monitoring
 from metrit.utils import extract_callable_and_args_if_method, function_key, get_recursion_state
+
+logger = logging.getLogger("metrit")
 
 # How often to poll the isolated process' result queue while it runs. Polling (and
 # draining) while the process is alive prevents a large return value from filling the
@@ -32,27 +35,33 @@ class IsolationError(Exception):
 
 def metrit(*args: Any, verbose: bool = False, find_children: bool = False, isolate: bool = True) -> Callable:
     """
-    Decorator function that measures the cpu, ram and io footprint of a given function in the current process. It can be called like @metrit or using arguments @metrit(...)
+    Decorator function that measures the cpu, ram and io footprint of a given function in the
+    current process. It can be called like @metrit or using arguments @metrit(...)
 
     Args:
-        args: contains the function to be decorated if no arguments are provided when calling the decorator
+        args: contains the function to be decorated if no arguments are provided when calling the
+            decorator
         verbose (bool, optional): Whether to print detailed information after execution. Defaults to False.
         isolate (bool, optional): If True, tries to encapsulate the function in its own process. Defaults to True.
 
     Returns:
         Callable: The decorated function if arguments are provided, otherwise a partial function.
                     If the callable is a class it will be returned unmodified and will not be decorated.
-                    If the MetritConfig ACTIVE flag is set to false, the callable will be returned without modification and will not be decorated.
+                    If the MetritConfig ACTIVE flag is set to false, the callable will be returned
+                    without modification and will not be decorated.
 
     Raises:
         Exception: If the function crashes, it will raise the exception given by the user's function.
 
     Notes:
         - Processes spawned inside the decorated function won't be measured
-        - This decorator also checks for recursion automatically even though is better to wrap the recursive function in another function and apply the @metrit decorator to the new function.
+        - This decorator also checks for recursion automatically even though is better to wrap the
+          recursive function in another function and apply the @metrit decorator to the new function.
         - Classes will be returned unmodified and will not be decorated.
         - If the function is a method, it won't be isolated.
-        - If isolate==True and the isolated process crashes (not a user exception), the function will be tried again in the main process. Exceptions raised by the user's function are propagated as-is and the function is not executed a second time.
+        - If isolate==True and the isolated process crashes (not a user exception), the function
+          will be tried again in the main process. Exceptions raised by the user's function are
+          propagated as-is and the function is not executed a second time.
 
 
 
@@ -85,8 +94,10 @@ def _decorator(func: Callable, verbose: bool = False, find_children: bool = Fals
     Decorator function that measures the memory and time of a given function.
     Args:
         func (Callable): The function to be decorated.
-        verbose (bool, optional): If True, prints detailed information about the function execution. Defaults to False.
-        find_children (bool, optional): If True, measures the memory and time of all child processes spawned by the function. Defaults to False.
+        verbose (bool, optional): If True, prints detailed information about the function execution.
+            Defaults to False.
+        find_children (bool, optional): If True, measures the memory and time of all child processes
+            spawned by the function. Defaults to False.
         isolate (bool, optional): If True, encapsulates the function in its own process. Defaults to True.
 
     Returns:
@@ -95,7 +106,8 @@ def _decorator(func: Callable, verbose: bool = False, find_children: bool = Fals
         Exception: If the function crashes, it will raise the exception given by the user's function.
     """
     if inspect.isclass(func):
-        # If a class is found, return the class inmediatly since it could raise an exception if triggered from other processes
+        # If a class is found, return the class inmediatly since it could raise an exception if
+        # triggered from other processes
         return func
 
     recursion_key = function_key(func)
@@ -122,7 +134,7 @@ def _decorator(func: Callable, verbose: bool = False, find_children: bool = Fals
                     )
                 except IsolationError as e:
                     crashed = True
-                    print("metrit: isolation failed. Running the function in the main process:", e)
+                    logger.warning("Isolation failed. Running the function in the main process: %s", e)
 
             if crashed or not isolate or is_method:
                 result, pool_monitor_data = call_func(find_children, callable_func, *args, **kwargs)

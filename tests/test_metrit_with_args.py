@@ -69,14 +69,17 @@ def wrapped_recursive_func(n):
 @metrit(verbose=True, find_children=True, isolate=False)
 def simulate_writes_and_reads(num_writes=5_000, data_size=1024):
     file = ".temp_file"
-    with open(file, "wb") as f:
-        for _ in range(num_writes):
-            f.write(b"a" * data_size)
-            f.flush()
+    try:
+        with open(file, "wb") as f:
+            for _ in range(num_writes):
+                f.write(b"a" * data_size)
+                f.flush()
 
-    with open(file, "rb") as f:
-        f.read()
-    os.remove(file)
+        with open(file, "rb") as f:
+            f.read()
+    finally:
+        if os.path.exists(file):
+            os.remove(file)
 
 
 class TestMetritFunctionsWithArgs(unittest.TestCase):

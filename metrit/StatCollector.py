@@ -1,3 +1,4 @@
+import logging
 from statistics import mean
 from sys import platform
 from typing import Dict, Tuple
@@ -6,6 +7,8 @@ import psutil
 from multiprocess import Queue, current_process  # type: ignore
 
 from .Stats import RawStats, Stats
+
+logger = logging.getLogger("metrit")
 
 
 class StatCollector:
@@ -70,7 +73,7 @@ class StatCollector:
 
             sucesss_queue.put(True)
         except Exception as e:
-            print(f"Error collecting cpu and ram stats: {e}")
+            logger.warning("Error collecting cpu and ram stats: %s", e)
             sucesss_queue.put(False)
         finally:
             return stats
@@ -90,8 +93,10 @@ class StatCollector:
             Returns None when the stats cannot be retrieved (e.g. the process is gone).
 
          Note:
-            - The CPU percentage is calculated using `psutil.Process.cpu_percent()` with the given `refresh_rate`.
-            - The memory information is obtained using `psutil.Process.as_dict()` with the attributes "memory_info" and "memory_percent".
+            - The CPU percentage is calculated using `psutil.Process.cpu_percent()` with the given
+              `refresh_rate`.
+            - The memory information is obtained using `psutil.Process.as_dict()` with the
+              attributes "memory_info" and "memory_percent".
             - Failed samples return None so callers can skip them instead of appending zeros,
               which would bias the averages downward and hide collection errors.
         """
@@ -120,13 +125,17 @@ class StatCollector:
             Dict: The updated stats dictionary in form of {pid: RawStats}.
 
         Note:
-            - If the platform is "darwin" (macos), the function returns the stats dictionary as is since IO stats are not supported for macOS.
+            - If the platform is "darwin" (macos), the function returns the stats dictionary as is
+              since IO stats are not supported for macOS.
             - The IO stats for the process and its children are collected using `self.get_io_counters()`.
             - The stats are stored in the `stats` dictionary with the process ID as the key.
-            - If `find_children` is True, the function iterates over the process's children and collects their IO stats.
+            - If `find_children` is True, the function iterates over the process's children and
+              collects their IO stats.
             - If a child process does not exist, it is skipped.
-            - The function puts True in the `sucesss_queue` if the stats collection is successful, False otherwise.
-            - If there is an exception during the stats an error message is printed and False is put in the `sucesss_queue`.
+            - The function puts True in the `sucesss_queue` if the stats collection is successful,
+              False otherwise.
+            - If there is an exception during the stats an error message is logged and False is put
+              in the `sucesss_queue`.
         """
         if platform == "darwin":
             return stats
@@ -161,7 +170,7 @@ class StatCollector:
 
             sucesss_queue.put(True)
         except Exception as e:
-            print(f"Error collecting io stats: {e}")
+            logger.warning("Error collecting io stats: %s", e)
             sucesss_queue.put(False)
         finally:
             return stats
@@ -191,9 +200,12 @@ class StatCollector:
         """
         Calculate statistics from the given raw statistics data.
         Args:
-            raw_stats (Dict[int, RawStats]): A dictionary containing the raw statistics data, where the keys are process IDs and the values are RawStats objects.
+            raw_stats (Dict[int, RawStats]): A dictionary containing the raw statistics data, where
+                the keys are process IDs and the values are RawStats objects.
         Returns:
-            Dict[int, Stats]: A dictionary containing the calculated statistics, where the keys are process IDs and the values are Stats objects. Only the statistics for non-empty RawStats objects are included.
+            Dict[int, Stats]: A dictionary containing the calculated statistics, where the keys are
+                process IDs and the values are Stats objects. Only the statistics for non-empty
+                RawStats objects are included.
         """
         return {pid: self.calculate_statistics(pid_data) for pid, pid_data in raw_stats.items() if pid_data}
 
@@ -237,16 +249,18 @@ class StatCollector:
         Returns:
             Dict[int, Stats]: A dictionary mapping process IDs to their respective statistics after subtraction.
 
-        The function subtracts the statistics from the `other` dictionary from the statistics in the `main` dictionary.
-        It iterates over the process IDs in the `main` dictionary and checks if the corresponding process ID exists in the `other` dictionary.
-        If it does, it subtracts the statistics from the `other` dictionary from the statistics in the `main` dictionary.
-        The resulting statistics are stored in the `result` dictionary.
-        If the corresponding process ID does not exist in the `other` dictionary, the statistics from the `main` dictionary are copied to the `result` dictionary.
-        Finally, the function returns the `result` dictionary.
+        The function subtracts the statistics from the `other` dictionary from the statistics in the
+        `main` dictionary. It iterates over the process IDs in the `main` dictionary and checks if
+        the corresponding process ID exists in the `other` dictionary. If it does, it subtracts the
+        statistics from the `other` dictionary from the statistics in the `main` dictionary. The
+        resulting statistics are stored in the `result` dictionary. If the corresponding process ID
+        does not exist in the `other` dictionary, the statistics from the `main` dictionary are
+        copied to the `result` dictionary. Finally, the function returns the `result` dictionary.
 
         Note:
             - The CPU statistics are not subtracted.
-            - The statistics are subtracted element-wise, and the resulting values are capped at 0.0 for floating-point values and 0 for integer values.
+            - The statistics are subtracted element-wise, and the resulting values are capped at 0.0
+              for floating-point values and 0 for integer values.
         """
         result = {}
         if not main:

@@ -1,5 +1,5 @@
 import threading
-from typing import Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 
 def format_size(bytes_size: int | float) -> str:
@@ -19,7 +19,7 @@ def format_size(bytes_size: int | float) -> str:
     return f"{bytes_size:.2f}PB"  # If it exceeds TB, convert to petabytes
 
 
-def extract_callable_and_args_if_method(func: Callable, *args: Tuple) -> Tuple[Callable, Tuple, Tuple, bool]:
+def extract_callable_and_args_if_method(func: Callable, *args: Any) -> Tuple[Callable, Tuple, Tuple, bool]:
     """
     Extracts the callable function and arguments from a given function, if it is a method.
     Args:

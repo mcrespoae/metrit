@@ -31,9 +31,17 @@ dev = [
     "twine>=5.1",
     "build>=1.2",
     "flake8",
+    "basedpyright",
 ]
 
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
+
+[tool.pyright]
+include = ["metrit"]
+exclude = [".venv", "build", "dist", "metrit.egg-info", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false

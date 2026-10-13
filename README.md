@@ -215,6 +215,20 @@ If an error occurs while executing the decorated function in non-isolated mode o
 
 - Deprecation warnings will be added before removing a feature.
 
+### Diagnostics and logging
+
+Internal diagnostics (isolation failures, crashed helper processes, collection errors) are emitted
+through the standard `logging` logger named `metrit` at `WARNING` level. A `NullHandler` is attached
+by default, so the library stays silent unless you configure logging:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)  # or configure the "metrit" logger directly
+```
+
+The measured resource summary is still printed to stdout; it is not affected by logging config.
+
 ## How metrit works
 
 Here's a detailed explanation of how `metrit` operates:

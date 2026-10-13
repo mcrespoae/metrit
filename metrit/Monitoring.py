@@ -1,3 +1,4 @@
+import logging
 import time
 from sys import platform
 from typing import Dict, Self
@@ -8,6 +9,8 @@ from multiprocess import Process, Queue, current_process  # type: ignore
 from .StatCollector import StatCollector
 from .Stats import RawStats, Stats
 from .utils import format_size
+
+logger = logging.getLogger("metrit")
 
 # Safety nets so a crashed helper process can never hang the caller.
 # The snapshot is a quick one-off collection, so it should never take this long.
@@ -24,7 +27,8 @@ class Monitoring:
         Initializes a new instance of the Monitoring class.
 
         Args:
-            find_children (bool, optional): If True, the monitoring process will also monitor child processes spawned by the main process. Defaults to False.
+            find_children (bool, optional): If True, the monitoring process will also monitor
+                child processes spawned by the main process. Defaults to False.
 
         Returns:
             None
@@ -67,13 +71,13 @@ class Monitoring:
             take_snapshot_process.start()
             take_snapshot_process.join(_SNAPSHOT_JOIN_TIMEOUT)  # Ensure process termination
             if take_snapshot_process.is_alive():
-                print("Process snapshot took too long, terminating it")
+                logger.warning("Process snapshot took too long, terminating it")
                 take_snapshot_process.terminate()
                 take_snapshot_process.join(_POOL_JOIN_TIMEOUT)
 
             has_process_crashed: bool = self.has_process_crashed(self.pre_success_queue)
             if has_process_crashed:
-                print("Process snapshot has crashed")
+                logger.warning("Process snapshot has crashed")
 
             # Only read when the snapshot actually produced data, otherwise a timed
             # out get() would block the caller (the crashed branch still needs to
@@ -84,7 +88,7 @@ class Monitoring:
         except Exception:
             raw_snapshot_stats = {}  # Avoid hanging the process if something goes wrong
 
-        self.stats_per_pid: Dict[int, Stats] = self.stat_collector.calculate_statistics_from_data(raw_snapshot_stats)
+        self.stats_per_pid = self.stat_collector.calculate_statistics_from_data(raw_snapshot_stats)
 
         # Clear queues
         self.pre_data_queue.close()
@@ -116,7 +120,8 @@ class Monitoring:
     def start_monitoring(self):
         """
         Initializes the monitoring process by creating queues and starting the pooling process.
-        This function initializes the monitoring process by creating the necessary queues for communication between the main process and the pooling process.
+        This function initializes the monitoring process by creating the necessary queues for
+        communication between the main process and the pooling process.
         """
 
         self.stop_queue = Queue()
@@ -131,23 +136,25 @@ class Monitoring:
     def stop_monitoring(self):
         """
         Stops the monitoring process by sending a signal to stop the pooling process.
-        This function sends a signal to stop the pooling process by putting the string "STOP" into the `stop_queue`.
-        It then waits for the pooling process to terminate using the `join()` method.
-        If the pooling process has crashed, it prints a message and terminates the process using the `terminate()` method.
-        After that, it retrieves the raw statistics from the `data_pool_queue` and calculates the statistics per PID using the `calculate_statistics_from_data()` method of the `stat_collector` object.
-        The object stats_per_pid is a dict of Stats objects, where the keys are the PIDs and the values are the corresponding Stats objects.
+        This function sends a signal to stop the pooling process by putting the string "STOP" into
+        the `stop_queue`. It then waits for the pooling process to terminate using the `join()`
+        method. If the pooling process has crashed, it logs a message and terminates it. After
+        that, it retrieves the raw statistics from the `data_pool_queue` and calculates the
+        statistics per PID using the `calculate_statistics_from_data()` method of the
+        `stat_collector` object. The object stats_per_pid is a dict of Stats objects, where the
+        keys are the PIDs and the values are the corresponding Stats objects.
         """
         # Send a signal to stop the pooling process
         self.stop_queue.put("STOP")
         self.pooling_process.join(_POOL_JOIN_TIMEOUT)  # type: ignore
         if self.pooling_process.is_alive():  # type: ignore
-            print("Process pooling did not stop in time, terminating it")
+            logger.warning("Process pooling did not stop in time, terminating it")
             self.pooling_process.terminate()  # type: ignore
             self.pooling_process.join(_POOL_JOIN_TIMEOUT)  # type: ignore
 
         has_process_crashed = self.has_process_crashed(self.success_queue)
         if has_process_crashed:
-            print("Process pooling has crashed")
+            logger.warning("Process pooling has crashed")
 
         # Never block forever: if the pooler crashed it may not have produced data.
         try:
@@ -190,7 +197,8 @@ class Monitoring:
                 stats, self.find_children, refresh_rate, self.success_queue
             )
 
-            # This call will help if find children = True and some of them die before the STOP signal is received so IO counters for dead processes will not be collected.
+            # Refresh IO counters on every iteration so children that die before the STOP
+            # signal are still captured.
             stats = self.stat_collector.collect_io_counters(stats, self.find_children, self.success_queue)
             if not self.stop_queue.empty():
                 message = self.stop_queue.get()
@@ -214,7 +222,7 @@ class Monitoring:
             other (Self): The other instance to compare stats_per_pid with.
         """
         subtracted_stats: Dict[int, Stats] = self.stat_collector.subtract_stats(self.stats_per_pid, other.stats_per_pid)
-        self.formated_stats: Stats = self.stat_collector.get_final_stats(subtracted_stats)
+        self.formated_stats = self.stat_collector.get_final_stats(subtracted_stats)
 
     def get_data(self):
         """
@@ -229,7 +237,8 @@ class Monitoring:
         Prints the metrit data for a given function.
 
         Parameters:
-            verbose (bool): If True, prints detailed information about the metrit data. If False, prints a concise summary.
+            verbose (bool): If True, prints detailed information about the metrit data. If False,
+                prints a concise summary.
             func_name (str): The name of the function.
             args (tuple): The positional arguments passed to the function.
             kwargs (dict): The keyword arguments passed to the function.
