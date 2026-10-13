@@ -57,7 +57,7 @@ my_function()
 This will output something like:
 
 ```text
-Function 'my_function'    24.00KB avg of memory     0.00% avg of CPU     239B IO reads   2.05KB IO writes
+Function 'my_function'    27.14MB peak memory     0.00% avg of CPU     298B IO reads   2.44KB IO writes
 ```
 
 ### Advanced Usage
@@ -77,19 +77,22 @@ This will provide detailed output:
 
 ```text
 ***** metrit data for function my_function_with_args: *****
-    Args: (1,).
-    Kwargs: {'b': 2}.
-    Maximum CPU usage: 0.00%.
-    Average CPU usage: 0.00%.
-    Average memory usage: 0.00%.
-    Maximum RSS memory usage: 112.00KB.
-    Average RSS memory usage: 112.00KB.
-    Maximum VMS memory usage: 68.00KB.
-    Average VMS memory usage: 68.00KB.
-    IO read count: 5.
-    IO writes count: 2.
-    IO read bytes: 239B.
-    IO write bytes: 2.01KB.
+	Args: (1,).
+	Kwargs: {'b': 2}.
+Maximum CPU usage: 0.00%.
+Average CPU usage: 0.00%.
+Peak memory usage: 0.08%.
+Average memory usage: 0.08%.
+Peak RSS memory usage: 27.14MB.
+RSS memory growth: 172.00KB.
+Average RSS memory usage: 27.14MB.
+Peak VMS memory usage: 17.65MB.
+VMS memory growth: 68.00KB.
+Average VMS memory usage: 17.65MB.
+IO read count: 5.
+IO writes count: 2.
+IO read bytes: 298B.
+IO write bytes: 2.44KB.
 ***** End of metrit data. *****
 ```
 
@@ -160,7 +163,7 @@ result = recursive_func(3)
 The result for this function could be something like:
 
 ```text
-Function 'recursive_func'  50.86KB avg of memory    54.46% avg of CPU   4.22KB IO reads   5.63KB IO writes
+Function 'recursive_func'  27.14MB peak memory    54.46% avg of CPU   4.22KB IO reads   5.63KB IO writes
 ```
 
 ### Encapsulating the Recursive Function
@@ -187,7 +190,7 @@ This approach enhances speed and measurement precision without incurring any per
 The result for this function could be something like:
 
 ```text
-Function 'encapsulated_recursive_function'  40.00KB avg of memory     0.00% avg of CPU     238B IO reads   2.01KB IO writes
+Function 'encapsulated_recursive_function'  27.14MB peak memory     0.00% avg of CPU     238B IO reads   2.01KB IO writes
 ```
 
 Both examples are valid for comparisons between similar circumstances, but the latter is preferred.
@@ -263,7 +266,8 @@ Here's a detailed explanation of how `metrit` operates:
 
 3. Resource Monitoring:
 
-    - A pooling helper process (spawned as a child of the target process) continuously samples its resources, starting with an interval of 0.1 seconds that scales up to 5 seconds for longer-running functions.
+    - Once the pooler signals it is ready, a pooling helper process (spawned as a child of the target process) samples its resources on a cadence that starts at 0.1 seconds and scales up to 5 seconds for longer-running functions.
+    - CPU is sampled without blocking, so each sample covers the time since the previous one; per-tick values are summed across processes so the aggregate is coherent.
     - The helper process excludes itself from the samples, so the monitoring overhead is not counted.
     - This adaptive refresh rate minimizes the monitoring overhead for time-consuming functions.
 
@@ -283,6 +287,26 @@ Here's a detailed explanation of how `metrit` operates:
 
     - When `find_children` is set to `True`, the library measures all processes spawned by the target process.
     - This feature is useful for nested functions or functions that spawn additional processes.
+
+## How measurements are defined
+
+- **CPU**: sampled as a percentage of a single CPU core and summed across the measured
+  processes. It can exceed 100% (a process using several cores) and, with
+  `find_children = True`, it is the sum of the target and its children sampled at the same
+  instant.
+- **Memory (RSS/VMS)**: the *peaks* are **absolute** values observed while the function ran;
+  the *growth* is the peak minus the pre-run baseline (how much the function added). Averages
+  are absolute means, and memory percentages are relative to the total system RAM. When
+  measuring several processes, the totals are the sum across processes at each sample; note
+  that summing RSS counts shared pages more than once, so it is an upper bound.
+- **IO**: cumulative per-process counters read before and after the run, so the reported
+  values are the bytes/counts performed during the run. Not available on macOS.
+- **Output**: the one-line summary reports the single headline figure per metric — **peak
+  memory**. The verbose output additionally shows RSS/VMS **growth** (peak minus baseline,
+  i.e. what the function added) and mean values.
+- **Sampling**: the target is sampled on a cadence that starts at 0.1s and grows up to 5s.
+  Very short functions are dominated by sampling resolution and memory peaks shorter than the
+  cadence can be missed; hold the state (e.g. keep the allocation alive) for stable numbers.
 
 ## Contributing
 

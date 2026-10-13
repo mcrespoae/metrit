@@ -7,7 +7,7 @@ else
 	RMDIR = rm -rf
 endif
 
-.PHONY: install build example test test-all lint typecheck check clean upload_pypi upload-testpypi
+.PHONY: install build example test test-all test-accuracy lint typecheck check clean upload_pypi upload-testpypi
 
 install:
 	$(info Installing the repo)
@@ -18,6 +18,10 @@ example:
 
 test:
 	uv run python -m unittest discover -v -s ./tests -p "*test*.py"
+
+# Opt-in accuracy checks against known workloads (see tests/accuracy_checks.py).
+test-accuracy:
+	uv run python -m unittest -v tests.accuracy_checks
 
 # Run the test suite across all supported Python versions (uv provisions any
 # missing interpreters). Each version runs in an isolated environment so the

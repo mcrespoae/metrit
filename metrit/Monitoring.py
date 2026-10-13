@@ -19,6 +19,9 @@ _SNAPSHOT_JOIN_TIMEOUT: float = 30.0
 _POOL_JOIN_TIMEOUT: float = 10.0
 # Maximum time to wait for data once the producing process has already stopped.
 _QUEUE_GET_TIMEOUT: float = 5.0
+# Maximum time to wait for the pooler to be ready (spawning a process can be slow,
+# especially on Windows). If it is exceeded we proceed anyway (best effort).
+_POOL_READY_TIMEOUT: float = 30.0
 
 
 class Monitoring:
@@ -27,28 +30,24 @@ class Monitoring:
         Initializes a new instance of the Monitoring class.
 
         Args:
-            find_children (bool, optional): If True, the monitoring process will also monitor
-                child processes spawned by the main process. Defaults to False.
-
-        Returns:
-            None
+            find_children (bool, optional): If True, the monitoring will also measure child
+                processes spawned by the target process. Defaults to False.
         """
         self.pid: int = current_process().pid  # type: ignore
         self.find_children: bool = find_children
         self.stat_collector: StatCollector = StatCollector(self.pid)
-        self.stats_per_pid: Dict[int, Stats] = {}
         self.formated_stats: Stats = Stats()
+        # Baseline (pre-run) and pooled (during-run) data, combined by `calculate_delta`.
+        self.baseline_totals: RawStats = RawStats()
+        self.baseline_io: Dict[int, RawStats] = {}
+        self.pool_totals: RawStats = RawStats()
+        self.pool_io: Dict[int, RawStats] = {}
 
     @staticmethod
     def has_process_crashed(queue: Queue) -> bool:
         """
         Checks if the process has crashed based on the given queue.
-
-        Args:
-            queue (Queue): The queue containing the process status.
-
-        Returns:
-            bool: True if the process has crashed, False otherwise.
+        Returns True if any collected status is a failure.
         """
         while not queue.empty():
             if not queue.get():
@@ -57,15 +56,14 @@ class Monitoring:
 
     def take_snapshot(self):
         """
-        Takes a snapshot of RAM and IO stats for the process and its children.
-        Saves the result in `self.stats_per_pid` in the form of Dict[int, Stats].
+        Records a baseline snapshot of the target process' resources (and children).
+        The result is stored in `self.baseline_io` and `self.baseline_totals`.
         """
-
         self.pre_success_queue = Queue()
         self.pre_data_queue = Queue()
 
-        # Take a snapshot of RAM and IO stats for the process and its children
-        raw_snapshot_stats: Dict[int, RawStats] = {}
+        baseline_io: Dict[int, RawStats] = {}
+        baseline_totals = RawStats()
         try:
             take_snapshot_process: Process = Process(target=self.collect_snapshot_stats, args=())
             take_snapshot_process.start()
@@ -78,17 +76,13 @@ class Monitoring:
             has_process_crashed: bool = self.has_process_crashed(self.pre_success_queue)
             if has_process_crashed:
                 logger.warning("Process snapshot has crashed")
-
-            # Only read when the snapshot actually produced data, otherwise a timed
-            # out get() would block the caller (the crashed branch still needs to
-            # fall through to the empty-dict default).
-            if not has_process_crashed:
-                raw_snapshot_stats = self.pre_data_queue.get(timeout=_QUEUE_GET_TIMEOUT)
-
+            else:
+                baseline_io, baseline_totals = self.pre_data_queue.get(timeout=_QUEUE_GET_TIMEOUT)
         except Exception:
-            raw_snapshot_stats = {}  # Avoid hanging the process if something goes wrong
+            baseline_io, baseline_totals = {}, RawStats()  # Avoid hanging if something goes wrong
 
-        self.stats_per_pid = self.stat_collector.calculate_statistics_from_data(raw_snapshot_stats)
+        self.baseline_io = baseline_io
+        self.baseline_totals = baseline_totals
 
         # Clear queues
         self.pre_data_queue.close()
@@ -98,51 +92,47 @@ class Monitoring:
 
     def collect_snapshot_stats(self):
         """
-        Collects CPU and RAM statistics for the process and its children, and IO counters.
-        The result is added to the queue.
-        It uses queues to pass the data:
-            pre_data_queue (Queue): A queue to store the collected statistics.
-            success_queue (Queue): A queue to communicate success or failure.
+        Collects a baseline snapshot of CPU/RAM and IO for the target and its children, and
+        puts ``(per_pid_raw, totals)`` on the queue.
         """
-        refresh_rate: float = 0.0
         raw_stats: Dict[int, RawStats] = {}
+        totals = RawStats()
 
-        cpu_memory_stats = self.stat_collector.collect_cpu_ram_stats(
-            raw_stats, self.find_children, refresh_rate, self.pre_success_queue
+        raw_stats, totals = self.stat_collector.collect_cpu_ram_stats(
+            raw_stats, totals, self.find_children, self.pre_success_queue
         )
+        raw_stats = self.stat_collector.collect_io_counters(raw_stats, self.find_children, self.pre_success_queue)
 
-        raw_stats = self.stat_collector.collect_io_counters(
-            cpu_memory_stats, self.find_children, self.pre_success_queue
-        )
-
-        self.pre_data_queue.put(raw_stats)
+        self.pre_data_queue.put((raw_stats, totals))
 
     def start_monitoring(self):
         """
         Initializes the monitoring process by creating queues and starting the pooling process.
-        This function initializes the monitoring process by creating the necessary queues for
-        communication between the main process and the pooling process.
         """
-
         self.stop_queue = Queue()
         self.data_pool_queue = Queue()
         self.success_queue = Queue()
-        self.pooling_raw_stats: Dict | None = None
+        self.ready_queue = Queue()
 
         # Start the monitoring process
         self.pooling_process = Process(target=self.pool_stats, args=())
         self.pooling_process.start()
 
+        # Wait until the pooler has primed its counters, so the function under test does
+        # not start before monitoring is actually sampling. Spawning can be slow on
+        # Windows/macOS (spawn), so this is bounded and best-effort.
+        try:
+            self.ready_queue.get(timeout=_POOL_READY_TIMEOUT)
+        except Exception:
+            logger.warning("Monitoring pooler did not signal readiness in time")
+
     def stop_monitoring(self):
         """
-        Stops the monitoring process by sending a signal to stop the pooling process.
-        This function sends a signal to stop the pooling process by putting the string "STOP" into
-        the `stop_queue`. It then waits for the pooling process to terminate using the `join()`
-        method. If the pooling process has crashed, it logs a message and terminates it. After
-        that, it retrieves the raw statistics from the `data_pool_queue` and calculates the
-        statistics per PID using the `calculate_statistics_from_data()` method of the
-        `stat_collector` object. The object stats_per_pid is a dict of Stats objects, where the
-        keys are the PIDs and the values are the corresponding Stats objects.
+        Stops the pooling process and retrieves the pooled data.
+
+        Sends a STOP signal, waits for the pooler with a timeout, and reads the pooled data
+        with a timeout so a crashed pooler can never block the caller. The result is stored in
+        `self.pool_io` and `self.pool_totals`.
         """
         # Send a signal to stop the pooling process
         self.stop_queue.put("STOP")
@@ -158,16 +148,20 @@ class Monitoring:
 
         # Never block forever: if the pooler crashed it may not have produced data.
         try:
-            pooling_raw_stats: Dict[int, RawStats] = self.data_pool_queue.get(timeout=_QUEUE_GET_TIMEOUT)
+            pool_io, pool_totals = self.data_pool_queue.get(timeout=_QUEUE_GET_TIMEOUT)
         except Exception:
-            pooling_raw_stats = {}
+            pool_io, pool_totals = {}, RawStats()
 
-        self.stats_per_pid = self.stat_collector.calculate_statistics_from_data(pooling_raw_stats)
+        self.pool_io = pool_io
+        self.pool_totals = pool_totals
 
         # Clean queues and process
         self.stop_queue.close()
         self.data_pool_queue.close()
         self.success_queue.close()
+        if hasattr(self, "ready_queue"):
+            self.ready_queue.close()
+            delattr(self, "ready_queue")
         delattr(self, "stop_queue")
         delattr(self, "data_pool_queue")
         delattr(self, "success_queue")
@@ -175,16 +169,23 @@ class Monitoring:
 
     def pool_stats(self):
         """
-        Collects statistics about CPU and RAM usage and IO counters for the process and its children.
-        It uses queues to pass the data:
-            data_pool_queue (Queue): A queue to store the collected statistics as a dict of RawStats.
-            stop_queue (Queue): A queue to receive stop signals.
-            success_queue (Queue): A queue to communicate success or failure.
+        Samples the target (and children) on a fixed cadence until the STOP signal arrives.
+
+        CPU is sampled non-blocking on cached Process objects, so each sample covers the time
+        since the previous one (the cadence). The per-tick totals are summed across processes
+        so the final aggregate is coherent. The cadence adapts from 0.1s up to 5s.
         """
         refresh_rate: float = 0.1  # Initial refresh rate
         max_refresh_rate: int = 5  # Maximum refresh rate
         time_elapsed: float = 0.0
         stats: Dict[int, RawStats] = {}
+        totals = RawStats()
+
+        # Prime CPU counters, then let the caller know monitoring is active before the
+        # function under test starts.
+        self.stat_collector.prime(self.find_children)
+        self.ready_queue.put(True)
+        time.sleep(refresh_rate)
 
         while True:
 
@@ -193,8 +194,8 @@ class Monitoring:
             if not psutil.pid_exists(self.pid):
                 break
 
-            stats = self.stat_collector.collect_cpu_ram_stats(
-                stats, self.find_children, refresh_rate, self.success_queue
+            stats, totals = self.stat_collector.collect_cpu_ram_stats(
+                stats, totals, self.find_children, self.success_queue
             )
 
             # Refresh IO counters on every iteration so children that die before the STOP
@@ -204,7 +205,7 @@ class Monitoring:
                 message = self.stop_queue.get()
                 if message == "STOP":
                     stats = self.stat_collector.collect_io_counters(stats, self.find_children, self.success_queue)
-                    self.data_pool_queue.put(stats)
+                    self.data_pool_queue.put((stats, totals))
                     break
             time.sleep(refresh_rate)
             time_elapsed += refresh_rate
@@ -216,19 +217,15 @@ class Monitoring:
 
     def calculate_delta(self, other: Self):
         """
-        Calculate the difference between the current instance's stats_per_pid and another instance's stats_per_pid.
-
-        Args:
-            other (Self): The other instance to compare stats_per_pid with.
+        Combines this (pooled) instance with the baseline instance into `self.formated_stats`.
         """
-        subtracted_stats: Dict[int, Stats] = self.stat_collector.subtract_stats(self.stats_per_pid, other.stats_per_pid)
-        self.formated_stats = self.stat_collector.get_final_stats(subtracted_stats)
+        self.formated_stats = self.stat_collector.finalize(
+            self.pool_totals, other.baseline_totals, self.pool_io, other.baseline_io
+        )
 
     def get_data(self):
         """
-        Retrieves the formatted statistics from the `formated_stats` attribute of the current instance.
-        Returns:
-            The formatted statistics as a `Stats` object.
+        Returns the formatted statistics as a `Stats` object.
         """
         return self.formated_stats
 
@@ -237,14 +234,10 @@ class Monitoring:
         Prints the metrit data for a given function.
 
         Parameters:
-            verbose (bool): If True, prints detailed information about the metrit data. If False,
-                prints a concise summary.
+            verbose (bool): If True, prints detailed information; otherwise a concise summary.
             func_name (str): The name of the function.
             args (tuple): The positional arguments passed to the function.
             kwargs (dict): The keyword arguments passed to the function.
-
-        Returns:
-            None
         """
         data: Stats = self.formated_stats
         if verbose:
@@ -253,10 +246,13 @@ class Monitoring:
             print(f"\tKwargs: {kwargs}.")
             print(f"Maximum CPU usage: {data.cpu_percentage_max:.2f}%.")
             print(f"Average CPU usage: {data.cpu_percentage_avg:.2f}%.")
+            print(f"Peak memory usage: {data.memory_percentage_max:.2f}%.")
             print(f"Average memory usage: {data.memory_percentage_avg:.2f}%.")
-            print(f"Maximum RSS memory usage: {format_size(data.rss_bytes_max)}.")
+            print(f"Peak RSS memory usage: {format_size(data.rss_bytes_max)}.")
+            print(f"RSS memory growth: {format_size(data.rss_bytes_growth)}.")
             print(f"Average RSS memory usage: {format_size(data.rss_bytes_avg)}.")
-            print(f"Maximum VMS memory usage: {format_size(data.vms_bytes_max)}.")
+            print(f"Peak VMS memory usage: {format_size(data.vms_bytes_max)}.")
+            print(f"VMS memory growth: {format_size(data.vms_bytes_growth)}.")
             print(f"Average VMS memory usage: {format_size(data.vms_bytes_avg)}.")
 
             if platform != "darwin":
@@ -271,15 +267,15 @@ class Monitoring:
             if len(func_name) > func_name_spacing:
                 func_name = func_name[: func_name_spacing - 4] + "..." + "'"
             if platform != "darwin":
-                output_format = "Function {:30} {:>8} avg of memory {:>8.2f}% avg of CPU {:>8} IO reads {:>8} IO writes"
+                output_format = "Function {:30} {:>8} peak memory {:>8.2f}% avg of CPU {:>8} IO reads {:>8} IO writes"
                 output = output_format.format(
                     func_name,
-                    format_size(data.rss_bytes_avg),
+                    format_size(data.rss_bytes_max),
                     data.cpu_percentage_avg,
                     format_size(data.read_bytes),
                     format_size(data.write_bytes),
                 )
             else:
-                output_format = "Function {:30} {:>8} avg of memory {:>8.2f}% avg of CPU"
-                output = output_format.format(func_name, format_size(data.rss_bytes_avg), data.cpu_percentage_avg)
+                output_format = "Function {:30} {:>8} peak memory {:>8.2f}% avg of CPU"
+                output = output_format.format(func_name, format_size(data.rss_bytes_max), data.cpu_percentage_avg)
             print(output)

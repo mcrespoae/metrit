@@ -41,11 +41,14 @@ class TestMonitoringPrint(unittest.TestCase):
         monitoring.formated_stats = Stats(
             cpu_percentage_max=12.34,
             cpu_percentage_avg=5.0,
+            memory_percentage_max=6.0,
             memory_percentage_avg=3.0,
             rss_bytes_max=2048,
-            rss_bytes_avg=1024,
+            rss_bytes_growth=1024,
+            rss_bytes_avg=1536,
             vms_bytes_max=4096,
-            vms_bytes_avg=2048,
+            vms_bytes_growth=2048,
+            vms_bytes_avg=3072,
             read_count=5,
             write_count=2,
         )
@@ -59,11 +62,13 @@ class TestMonitoringPrint(unittest.TestCase):
         self.assertIn("Args: (1,).", output)
         self.assertIn("Kwargs: {'b': 2}.", output)
         self.assertIn("Maximum CPU usage: 12.34%.", output)
-        self.assertIn("Maximum RSS memory usage: 2.00KB.", output)
+        self.assertIn("Peak memory usage: 6.00%.", output)
+        self.assertIn("Peak RSS memory usage: 2.00KB.", output)
+        self.assertIn("RSS memory growth: 1.00KB.", output)
 
     def test_print_concise_contains_summary(self):
         monitoring = Monitoring()
-        monitoring.formated_stats = Stats(rss_bytes_avg=1024, cpu_percentage_avg=1.5, read_bytes=10, write_bytes=20)
+        monitoring.formated_stats = Stats(rss_bytes_max=1024, cpu_percentage_avg=1.5, read_bytes=10, write_bytes=20)
 
         buffer = io.StringIO()
         with redirect_stdout(buffer):
@@ -71,7 +76,7 @@ class TestMonitoringPrint(unittest.TestCase):
 
         output = buffer.getvalue()
         self.assertIn("Function 'my_func'", output)
-        self.assertIn("1.00KB avg of memory", output)
+        self.assertIn("1.00KB peak memory", output)
         self.assertIn("1.50% avg of CPU", output)
 
     def test_print_truncates_long_function_name(self):
@@ -95,7 +100,8 @@ class TestMonitoringGracefulDegradation(unittest.TestCase):
             monitoring = Monitoring()
             monitoring.take_snapshot()  # must not raise or block
 
-        self.assertEqual(monitoring.stats_per_pid, {})
+        self.assertEqual(monitoring.baseline_io, {})
+        self.assertEqual(monitoring.baseline_totals.rss_bytes, [])
 
     def test_stop_monitoring_without_data_does_not_hang(self):
         monitoring = Monitoring()
@@ -107,7 +113,8 @@ class TestMonitoringGracefulDegradation(unittest.TestCase):
 
         monitoring.stop_monitoring()  # must not raise or block
 
-        self.assertEqual(monitoring.stats_per_pid, {})
+        self.assertEqual(monitoring.pool_io, {})
+        self.assertEqual(monitoring.pool_totals.rss_bytes, [])
 
 
 if __name__ == "__main__":
