@@ -1,4 +1,5 @@
 import logging
+from importlib.metadata import PackageNotFoundError, version
 
 from .core import MetritConfig, metrit
 
@@ -7,4 +8,9 @@ from .core import MetritConfig, metrit
 # resource summary is still printed to stdout by design.
 logging.getLogger("metrit").addHandler(logging.NullHandler())
 
-__all__ = ["metrit", "MetritConfig"]
+try:
+    __version__ = version("metrit")
+except PackageNotFoundError:  # Running from a source tree without installed metadata
+    __version__ = "0.0.0+unknown"
+
+__all__ = ["metrit", "MetritConfig", "__version__"]

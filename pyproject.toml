@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "metrit"
 dynamic = ["version"]
-description = "A dead simple resources monitoring decorator"
+description = "A dead simple resource monitoring decorator"
 authors = [{name = "Mario Crespo", email = "info@mariocrespo.es"}]
 readme = "README.md"
 dependencies = ["psutil>=6.0.0", "multiprocess>=0.70.17"]
@@ -15,6 +15,10 @@ license = {file = "LICENSE"}
 classifiers = [
         "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Intended Audience :: Developers",
@@ -32,7 +36,12 @@ dev = [
     "build>=1.2",
     "flake8",
     "basedpyright",
+    "coverage>=7.6",
 ]
+
+
+[tool.setuptools.package-data]
+metrit = ["py.typed"]
 
 
 [tool.setuptools_scm]

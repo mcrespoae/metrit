@@ -1,7 +1,23 @@
+<div align="center">
 
-# metrit
+<img src=".github/assets/banner.svg" alt="metrit: a dead simple resource monitoring decorator for Python" width="100%">
 
-![PyPI](https://img.shields.io/pypi/v/metrit?label=pypi%20package)
+**A dead simple resource monitoring decorator for Python.**
+
+[![PyPI version](https://img.shields.io/pypi/v/metrit?style=flat-square&label=PyPI&color=3775A9)](https://pypi.org/project/metrit/)
+[![Python versions](https://img.shields.io/pypi/pyversions/metrit?style=flat-square&label=Python&color=3776AB)](https://pypi.org/project/metrit/)
+[![License: MIT](https://img.shields.io/pypi/l/metrit?style=flat-square&color=green)](LICENSE)
+[![Downloads per month](https://img.shields.io/pypi/dm/metrit?style=flat-square&label=Downloads%2Fmonth&color=orange)](https://pypi.org/project/metrit/)
+[![Development status](https://img.shields.io/pypi/status/metrit?style=flat-square&color=blue)](https://pypi.org/project/metrit/)
+
+[![Tests](https://github.com/mcrespoae/metrit/actions/workflows/push_to_main.yml/badge.svg)](https://github.com/mcrespoae/metrit/actions/workflows/push_to_main.yml)
+[![Release](https://github.com/mcrespoae/metrit/actions/workflows/pypi_release.yml/badge.svg)](https://github.com/mcrespoae/metrit/actions/workflows/pypi_release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/mcrespoae/metrit?style=flat-square&color=blueviolet)](https://github.com/mcrespoae/metrit/releases)
+[![Last commit](https://img.shields.io/github/last-commit/mcrespoae/metrit?style=flat-square)](https://github.com/mcrespoae/metrit/commits/main)
+[![Open issues](https://img.shields.io/github/issues/mcrespoae/metrit?style=flat-square)](https://github.com/mcrespoae/metrit/issues)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://github.com/mcrespoae/metrit/pulls)
+
+</div>
 
 `metrit` is a Python package designed to simplify the process of measuring the execution resources of your functions through a straightforward decorator.
 
@@ -10,6 +26,8 @@
 The `metrit` decorator is a powerful tool for accurately measuring the execution resources of Python functions, including RAM, CPU, and I/O operations. It provides insights into resource utilization and potential bottlenecks. With features like automatic recursion detection and robust handling of process isolation and monitoring, `metrit` ensures precise measurements even for complex functions involving multiple processes.
 
 ## Installation
+
+`metrit` requires Python 3.11 or newer.
 
 You can install `metrit` using pip:
 
@@ -39,7 +57,7 @@ my_function()
 This will output something like:
 
 ```text
-Function 'my_function'    24.00KB avg of memory     0.00% avg of CPU     239B IO reads   2.05KB IO writes.
+Function 'my_function'    24.00KB avg of memory     0.00% avg of CPU     239B IO reads   2.05KB IO writes
 ```
 
 ### Advanced Usage
@@ -79,7 +97,7 @@ More examples can be found in the [examples.py](https://github.com/mcrespoae/met
 
 ### Metrit in Production Environments
 
-The `metrit` decorator is designed **exclusively for benchmarking and is not suitable for use in production code**. You can globally deactivate the `metrit` feature by setting the `MetrittConfig.ACTIVE` flag to false at the top of your imports. While this will skip the decoration of callables, there may still be a minimal CPU overhead. For production-grade applications, it's recommended to manually remove the decorators and `metrit` imports to maintain optimal performance.
+The `metrit` decorator is designed **exclusively for benchmarking and is not suitable for use in production code**. You can globally deactivate the `metrit` feature by setting the `MetritConfig.ACTIVE` flag to false at the top of your imports. While this will skip the decoration of callables, there may still be a minimal CPU overhead. For production-grade applications, it's recommended to manually remove the decorators and `metrit` imports to maintain optimal performance.
 
 ```python
 from metrit import MetritConfig, metrit
@@ -91,12 +109,13 @@ MetritConfig.ACTIVE = False  # Deactivates the decorator
 - Simplified usage.
 - Accurate measurement of function resources.
 - Ability to isolate the execution of the function for more accurate measurement.
-- Support for functions, methods, `classmethod` and `staticmethods`.
+- Support for functions, methods, `classmethod` and `staticmethod`.
 - Human-readable data formatting.
 - Optional verbose mode for detailed information.
 - Ability to globally deactivate the `metrit` decorator.
-- Optional check children processes' resources as well.
+- Optionally check the resources of child processes as well.
 - Automatic recursion detection.
+- Fully type-hinted (PEP 561 `py.typed`) for static analysis and editor support.
 
 ## Parameters
 
@@ -112,7 +131,7 @@ The ideal way to use this package is by applying the decorator to the functions 
 
 - For more precise measurements, it is recommended to set `isolate` to `True`. Please see the [Isolate](#isolate) section to understand the limitations of this approach.
 
-- Recursive functions should be encapsulated for better benchmarking. Please refer to the [Recursive functions](#recursive-functions) section to to learn more.
+- Recursive functions should be encapsulated for better benchmarking. Please refer to the [Recursive functions](#recursive-functions) section to learn more.
 
 - Decorating classes will return the class unmodified and will not be decorated. For more information about this decision, see the [Why is class decoration bypassed](#why-is-class-decoration-bypassed) in the [Limitations](#limitations) section.
 
@@ -175,7 +194,7 @@ Both examples are valid for comparisons between similar circumstances, but the l
 
 ## Isolate
 
-The isolation feature works by encapsulating the decorated function in a separate process and then monitoring that process from another process to avoid interfering with the function's execution. If any part of this process fails, `metrit` will retry running the function in the original process.
+The isolation feature works by encapsulating the decorated function in a separate process and then monitoring that process from another process to avoid interfering with the function's execution. If the isolation mechanism itself fails (for example, the isolated process crashes or cannot be started), `metrit` retries the function in the original process. Exceptions raised by the function itself are not an isolation failure: they are propagated to the caller without re-running the function.
 
 ## Limitations
 
@@ -190,11 +209,11 @@ While the `isolate` feature is powerful and recommended for precise measurements
 
 ### Why is Class Decoration Bypassed?
 
-When a class is decorated using `metrit`, it remains unmodified and is not decorated. If the user intends to measure the time of `__init__` or any other constructor, it can be done directly on those methods.
+When a class is decorated using `metrit`, it remains unmodified and is not decorated. If the user intends to measure the resources of `__init__` or any other constructor, it can be done directly on those methods.
 
 This design decision was made due to a potential issue that arises when a decorated class is used in conjunction with spawning a new process. Specifically, if a class decorated with `metrit` is pickled for use in a separate process and then a method is called within that new process, it may result in a `PicklingError`.
 
-### MacOs Limitations
+### macOS Limitations
 
 This package relies on the `psutil` package for retrieving data. Unfortunately, macOS and `psutil` do not support IO data per process, so IO data will not be shown on macOS.
 
@@ -209,7 +228,7 @@ Additionally, if `find_children` is set to `True`, the CPU percentage of all chi
 
 ### Errors
 
-If an error occurs while executing the decorated function in non-isolated mode or within a recursively decorated function, the error will be propagated to the user's function.
+Exceptions raised by the decorated function are propagated to the caller in every mode (isolated, non-isolated and recursive). `metrit` only falls back to the main process when the isolation mechanism itself fails, so the function is never executed twice.
 
 ### Warnings
 
@@ -262,7 +281,7 @@ Here's a detailed explanation of how `metrit` operates:
 
 6. Child Process Monitoring:
 
-    - When `find_children` is set to `True`, the library measures all processes spawned by the function process.
+    - When `find_children` is set to `True`, the library measures all processes spawned by the target process.
     - This feature is useful for nested functions or functions that spawn additional processes.
 
 ## Contributing
@@ -270,7 +289,7 @@ Here's a detailed explanation of how `metrit` operates:
 Contributions are welcome! Please follow these guidelines when contributing:
 
 1. Fork the repository.
-2. Install [uv](https://docs.astral.sh/uv/) and run `make install` to install all dependencies.
+2. Install [uv](https://docs.astral.sh/uv/) and run `make install` to install all dependencies (backed by `uv sync`).
 3. Create a new branch for your changes.
 4. Implement your changes and commit them.
 5. Push your changes to your forked repository.
@@ -278,11 +297,13 @@ Contributions are welcome! Please follow these guidelines when contributing:
 
 You can also open an issue if you find a bug or have a suggestion.
 
-You can test your code using `make test` and `make example` to trigger the examples. Please, check the [Makefile](https://github.com/mcrespoae/metrit/blob/main/Makefile) to know more about commands.
+You can test your code using `make test` (current interpreter) or `make test-all` (all supported Python versions), and `make example` to trigger the examples. You can also run `make check` to lint (`flake8`) and type-check (`basedpyright`). Please, check the [Makefile](https://github.com/mcrespoae/metrit/blob/main/Makefile) to know more about commands.
 
 ## Testing
 
 The package has been thoroughly tested using unittesting. Test cases can be found in the [tests folder](https://github.com/mcrespoae/metrit/tree/main/tests).
+
+CI runs the suite across Python 3.11–3.14 on Linux, macOS and Windows, and reports code coverage.
 
 ## License
 

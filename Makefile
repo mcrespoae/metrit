@@ -7,17 +7,26 @@ else
 	RMDIR = rm -rf
 endif
 
-.PHONY: install build example test lint typecheck check clean upload_pypi upload-testpypi
+.PHONY: install build example test test-all lint typecheck check clean upload_pypi upload-testpypi
 
 install:
 	$(info Installing the repo)
-	uv sync --dev
+	uv sync --group dev
 
 example:
 	uv run python examples/examples.py
 
 test:
 	uv run python -m unittest discover -v -s ./tests -p "*test*.py"
+
+# Run the test suite across all supported Python versions (uv provisions any
+# missing interpreters). Each version runs in an isolated environment so the
+# main .venv is left untouched.
+test-all:
+	uv run --isolated --python 3.11 python -m unittest discover -s ./tests -p "*test*.py"
+	uv run --isolated --python 3.12 python -m unittest discover -s ./tests -p "*test*.py"
+	uv run --isolated --python 3.13 python -m unittest discover -s ./tests -p "*test*.py"
+	uv run --isolated --python 3.14 python -m unittest discover -s ./tests -p "*test*.py"
 
 lint:
 	uv run flake8
